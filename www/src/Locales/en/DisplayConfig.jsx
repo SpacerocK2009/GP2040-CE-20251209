@@ -45,6 +45,7 @@ export default {
                 'power-management-header': 'Power Management',
                 'turn-off-when-suspended': 'Turn Off When Suspended',
                 'disable-when-p5general': 'Disable OLED in P5General mode',
+                'p5general-oled-safe-mode': 'Throttle OLED refresh in P5General (safer)',
                 'input-history-label': 'Input History',
                 'display-state': {
                         disabled: 'Disabled',

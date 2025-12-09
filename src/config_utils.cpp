@@ -432,6 +432,7 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
     INIT_UNSET_PROPERTY(config.displayOptions, inputHistoryCol, INPUT_HISTORY_COL);
     INIT_UNSET_PROPERTY(config.displayOptions, inputHistoryRow, INPUT_HISTORY_ROW);
     INIT_UNSET_PROPERTY(config.displayOptions, disableWhenP5General, 0);
+    INIT_UNSET_PROPERTY(config.displayOptions, p5GeneralOledSafeMode, 1);
 
     ButtonLayoutParamsLeft& paramsLeft = config.displayOptions.buttonLayoutCustomOptions.paramsLeft;
     INIT_UNSET_PROPERTY(paramsLeft, layout, BUTTON_LAYOUT);

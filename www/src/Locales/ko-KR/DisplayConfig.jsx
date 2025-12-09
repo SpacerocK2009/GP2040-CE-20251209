@@ -45,6 +45,7 @@ export default {
                 'power-management-header': '전원 관리',
                 'turn-off-when-suspended': '대기모드에서 끄기',
                 'disable-when-p5general': 'P5General 모드에서 OLED 비활성화',
+                'p5general-oled-safe-mode': 'P5General에서 OLED 새로고침 줄이기(안전)',
                 'input-history-label': '입력 기록',
                 'display-state': {
 			disabled: '사용안함',

@@ -45,6 +45,7 @@ export default {
                 'power-management-header': 'Gestion de l\'alimentation',
                 'turn-off-when-suspended': 'Éteindre lors de la mise en veille',
                 'disable-when-p5general': 'Désactiver l’OLED en mode P5General',
+                'p5general-oled-safe-mode': 'Réduire le rafraîchissement OLED en P5General (plus sûr)',
                 'input-history-label': 'Historique des entrées',
                 'display-state': {
 			disabled: 'Désactivé',

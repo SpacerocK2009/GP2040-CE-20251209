@@ -45,6 +45,7 @@ export default {
                 'power-management-header': '電源管理',
                 'turn-off-when-suspended': 'サスペンド中OFFにする',
                 'disable-when-p5general': 'P5GeneralモードではOLEDを無効化',
+                'p5general-oled-safe-mode': 'P5General時はOLED更新を抑制（安全策）',
                 'input-history-label': '入力履歴',
                 'display-state': {
 			disabled: '無効',

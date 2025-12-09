@@ -26,6 +26,7 @@ bool DisplayAddon::available() {
         p5GeneralDriver = nullptr;
     }
     disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
+    p5GeneralOledSafeMode = options.p5GeneralOledSafeMode;
 
     // create the gfx interface
     gpDisplay = new GPGFX();
@@ -77,7 +78,15 @@ void DisplayAddon::setup() {
     configMode = DriverManager::getInstance().isConfigMode();
     turnOffWhenSuspended = options.turnOffWhenSuspended;
     displaySaverMode = options.displaySaverMode;
-    renderIntervalUs = isP5GeneralMode ? 16000 : 8000;
+    busyDeferUs = 4000;
+    if (isP5GeneralMode) {
+        renderIntervalUs = p5GeneralOledSafeMode ? 32000 : 16000;
+        if (p5GeneralOledSafeMode) {
+            busyDeferUs = 12000;
+        }
+    } else {
+        renderIntervalUs = 8000;
+    }
     nextRenderTime = make_timeout_time_us(renderIntervalUs);
 
     prevValues = Storage::getInstance().GetGamepad()->debouncedGpio;
@@ -221,9 +230,16 @@ void DisplayAddon::process() {
     }
 
     absolute_time_t now = get_absolute_time();
-    if (p5GeneralDriver != nullptr && p5GeneralDriver->shouldDeferIO()) {
-        nextRenderTime = delayed_by_us(now, busyDeferUs);
-        return;
+    if (p5GeneralDriver != nullptr) {
+        if (p5GeneralDriver->shouldDeferIO()) {
+            nextRenderTime = delayed_by_us(now, busyDeferUs);
+            return;
+        }
+
+        if (p5GeneralOledSafeMode && p5GeneralDriver->isAuthBusy()) {
+            nextRenderTime = delayed_by_us(now, busyDeferUs);
+            return;
+        }
     }
 
     // Core0 requested a new display mode
