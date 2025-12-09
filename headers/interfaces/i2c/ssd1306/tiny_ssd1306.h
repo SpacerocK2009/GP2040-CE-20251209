@@ -37,6 +37,8 @@ class GPGFX_TinySSD1306 : public GPGFX_DisplayBase {
         void drawSprite(uint8_t* spriteData, uint16_t width, uint16_t height, uint16_t pitch, uint16_t x, uint16_t y, uint8_t priority, double scale = 1.0);
 
         void drawBuffer(uint8_t *pBuffer);
+        void drawBuffer(uint8_t *pBuffer, uint8_t pages);
+        void resetPartialState() override { framePage = 0; }
 
         bool isSH1106(int detectedDisplay);
 
