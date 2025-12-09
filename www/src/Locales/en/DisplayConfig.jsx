@@ -46,11 +46,12 @@ export default {
                 'turn-off-when-suspended': 'Turn Off When Suspended',
                 'disable-when-p5general': 'Disable OLED in P5General mode',
                 'p5general-oled-safe-mode': 'Throttle OLED refresh in P5General (safer)',
+                'p5general-oled-mode': 'P5General OLED pacing',
                 'input-history-label': 'Input History',
                 'display-state': {
                         disabled: 'Disabled',
-			enabled: 'Enabled',
-		},
+                        enabled: 'Enabled',
+                },
 		'flip-display': {
 			none: 'None',
 			flip: 'Flip',
@@ -82,6 +83,12 @@ export default {
 			'socd-mode': 'SOCD Mode',
 			'macro-mode': 'Macro',
 			'profile-mode': 'Profile',
-		},
-	},
+                },
+                'p5general-oled-mode': {
+                        safe: 'Balanced (chunked refresh)',
+                        low: 'Low (slow refresh)',
+                        medium: 'Medium (default)',
+                        high: 'High (fastest)',
+                },
+        },
 };
