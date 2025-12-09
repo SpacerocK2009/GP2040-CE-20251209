@@ -8,13 +8,13 @@ const koKR = () => (
 		height="1em"
 	>
 		<defs>
-			<clipPath id="kr-a">
-				<path fill-opacity=".7" d="M-95.8-.4h682.7v512H-95.8z" />
-			</clipPath>
-		</defs>
-		<g
-			fill-rule="evenodd"
-			clip-path="url(#kr-a)"
+                        <clipPath id="kr-a">
+                                <path fillOpacity=".7" d="M-95.8-.4h682.7v512H-95.8z" />
+                        </clipPath>
+                </defs>
+                <g
+                        fillRule="evenodd"
+                        clipPath="url(#kr-a)"
 			transform="translate(89.8 .4) scale(.9375)"
 		>
 			<path fill="#fff" d="M-95.8-.4H587v512H-95.8Z" />
