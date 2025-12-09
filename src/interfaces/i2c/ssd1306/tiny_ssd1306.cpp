@@ -541,48 +541,55 @@ void GPGFX_TinySSD1306::drawSprite(uint8_t* image, uint16_t width, uint16_t heig
 }
 
 void GPGFX_TinySSD1306::drawBuffer(uint8_t* pBuffer) {
-	uint16_t bufferSize = MAX_SCREEN_SIZE;
-	uint8_t buffer[bufferSize+1] = {SET_START_LINE};
+        drawBuffer(pBuffer, MAX_SCREEN_HEIGHT / 8);
+}
 
-	int result = -1;
-	
-    if (this->screenType == ScreenAlternatives::SCREEN_132x64) {
+void GPGFX_TinySSD1306::drawBuffer(uint8_t* pBuffer, uint8_t pages) {
+        uint16_t bufferSize = MAX_SCREEN_SIZE;
+        uint8_t buffer[bufferSize+1] = {SET_START_LINE};
+
+        uint8_t maxPages = (MAX_SCREEN_HEIGHT / 8);
+        if (pages == 0 || pages > maxPages) {
+            pages = maxPages;
+        }
+
+        if (this->screenType == ScreenAlternatives::SCREEN_132x64) {
         uint16_t x = 0;
-        uint16_t y = 0;
-        for (y = 0; y < (MAX_SCREEN_HEIGHT/8); y++) {
+        for (uint8_t i = 0; i < pages; i++) {
+            uint8_t y = (framePage + i) % maxPages;
             sendCommand(0xB0 + y);
             sendCommand(x & 0x0F);
             sendCommand(0x10 | (x >> 4));
-        
+
             if (pBuffer == NULL) {
                 memcpy(&buffer[1],&frameBuffer[y*MAX_SCREEN_WIDTH],MAX_SCREEN_WIDTH);
             } else {
                 memcpy(&buffer[1],&pBuffer[y*MAX_SCREEN_WIDTH],MAX_SCREEN_WIDTH);
             }
-        
-            result = _options.i2c->write(_options.address, buffer, MAX_SCREEN_WIDTH+3, false);
+
+            _options.i2c->write(_options.address, buffer, MAX_SCREEN_WIDTH+3, false);
         }
     } else {
-        sendCommand(CommandOps::PAGE_ADDRESS);
-        sendCommand(0x00);
-        sendCommand(0x07);
-        sendCommand(CommandOps::COLUMN_ADDRESS);
-        sendCommand(0x00);
-        sendCommand(0x7F);
+        for (uint8_t i = 0; i < pages; i++) {
+            uint8_t page = (framePage + i) % maxPages;
 
-        if (pBuffer == NULL) {
-            memcpy(&buffer[1],frameBuffer,bufferSize);
-        } else {
-            memcpy(&buffer[1],pBuffer,bufferSize);
+            sendCommand(CommandOps::PAGE_ADDRESS);
+            sendCommand(page);
+            sendCommand(page);
+            sendCommand(CommandOps::COLUMN_ADDRESS);
+            sendCommand(0x00);
+            sendCommand(0x7F);
+
+            if (pBuffer == NULL) {
+                memcpy(&buffer[1], &frameBuffer[page * MAX_SCREEN_WIDTH], MAX_SCREEN_WIDTH);
+            } else {
+                memcpy(&buffer[1], &pBuffer[page * MAX_SCREEN_WIDTH], MAX_SCREEN_WIDTH);
+            }
+            _options.i2c->write(_options.address, buffer, MAX_SCREEN_WIDTH + 1, false);
         }
-        result = _options.i2c->write(_options.address, buffer, sizeof(buffer), false);
     }
 
-	if (framePage < MAX_SCREEN_HEIGHT/8) {
-		framePage++;
-	} else {
-		framePage = 0;
-	}
+        framePage = (framePage + pages) % maxPages;
 }
 
 void GPGFX_TinySSD1306::rotatePoint(double cx, double cy, double &x, double &y, double angle) {

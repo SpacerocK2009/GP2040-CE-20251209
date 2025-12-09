@@ -445,6 +445,7 @@ std::string setDisplayOptions(DisplayOptions& displayOptions)
     readDoc(displayOptions.inputHistoryRow, doc, "inputHistoryRow");
     readDoc(displayOptions.disableWhenP5General, doc, "disableWhenP5General");
     readDoc(displayOptions.p5GeneralOledSafeMode, doc, "p5GeneralOledSafeMode");
+    readDoc(displayOptions.p5GeneralOledMode, doc, "p5GeneralOledMode");
 
     readDoc(displayOptions.buttonLayoutCustomOptions.paramsLeft.layout, doc, "buttonLayoutCustomOptions", "params", "layout");
     readDoc(displayOptions.buttonLayoutCustomOptions.paramsLeft.common.startX, doc, "buttonLayoutCustomOptions", "params", "startX");
@@ -503,6 +504,7 @@ std::string getDisplayOptions() // Manually set Document Attributes for the disp
     writeDoc(doc, "inputHistoryRow", displayOptions.inputHistoryRow);
     writeDoc(doc, "disableWhenP5General", displayOptions.disableWhenP5General);
     writeDoc(doc, "p5GeneralOledSafeMode", displayOptions.p5GeneralOledSafeMode);
+    writeDoc(doc, "p5GeneralOledMode", displayOptions.p5GeneralOledMode);
 
     writeDoc(doc, "buttonLayoutCustomOptions", "params", "layout", displayOptions.buttonLayoutCustomOptions.paramsLeft.layout);
     writeDoc(doc, "buttonLayoutCustomOptions", "params", "startX", displayOptions.buttonLayoutCustomOptions.paramsLeft.common.startX);
