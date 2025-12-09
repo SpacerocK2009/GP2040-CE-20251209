@@ -19,11 +19,15 @@ bool DisplayAddon::available() {
     const DisplayOptions& options = Storage::getInstance().getDisplayOptions();
     bool result = false;
 
+    p5GeneralDriver = dynamic_cast<P5GeneralDriver*>(DriverManager::getInstance().getDriver());
+    isP5GeneralMode = p5GeneralDriver != nullptr;
+    disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
+
     // create the gfx interface
     gpDisplay = new GPGFX();
     gpOptions = gpDisplay->getAvailableDisplay(GPGFX_DisplayType::DISPLAY_TYPE_NONE);
     if ( gpOptions.displayType != GPGFX_DisplayType::DISPLAY_TYPE_NONE ) {
-        if ( options.enabled ) {
+        if ( options.enabled && !disableWhenP5General ) {
             result = true;
         } else {
             // Power off our display if its available but disabled in config
@@ -36,10 +40,12 @@ bool DisplayAddon::available() {
             gpDisplay->init(gpOptions);
             setDisplayPower(0);
             delete gpDisplay;
+            gpDisplay = nullptr;
             result = false;
         }
     } else { // No display, delete our GPGFX
         delete gpDisplay;
+        gpDisplay = nullptr;
     }
     return result;
 }
@@ -67,8 +73,11 @@ void DisplayAddon::setup() {
     configMode = DriverManager::getInstance().isConfigMode();
     turnOffWhenSuspended = options.turnOffWhenSuspended;
     displaySaverMode = options.displaySaverMode;
+    renderIntervalUs = isP5GeneralMode ? 16000 : 8000;
+    nextRenderTime = make_timeout_time_us(renderIntervalUs);
 
     prevValues = Storage::getInstance().GetGamepad()->debouncedGpio;
+    prevMillis = getMillis();
 
     // set current display mode
     if (!configMode) {
@@ -203,6 +212,16 @@ void DisplayAddon::process() {
         return;
     }
 
+    if (!time_reached(nextRenderTime)) {
+        return;
+    }
+
+    absolute_time_t now = get_absolute_time();
+    if (p5GeneralDriver != nullptr && p5GeneralDriver->shouldDeferIO()) {
+        nextRenderTime = delayed_by_us(now, busyDeferUs);
+        return;
+    }
+
     // Core0 requested a new display mode
     if (nextDisplayMode != currDisplayMode ) {
         currDisplayMode = nextDisplayMode;
@@ -232,6 +251,8 @@ void DisplayAddon::process() {
             updateDisplayScreen();
         }
     }
+
+    nextRenderTime = delayed_by_us(now, renderIntervalUs);
 }
 
 const DisplayOptions& DisplayAddon::getDisplayOptions() {

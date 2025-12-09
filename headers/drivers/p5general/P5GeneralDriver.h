@@ -35,6 +35,8 @@ public:
     virtual uint16_t GetJoystickMidValue();
     virtual USBListener * get_usb_auth_listener();
     bool getAuthSent() { return false;}
+    bool isAuthBusy();
+    bool shouldDeferIO();
     bool getDongleAuthRequired();
 private:
     P5GenerorReport p5GeneralReport;

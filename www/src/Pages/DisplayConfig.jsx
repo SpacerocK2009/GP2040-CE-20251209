@@ -78,10 +78,11 @@ const defaultValues = {
 	macroMode: true,
 	profileMode: false,
 	inputHistoryEnabled: false,
-	inputHistoryLength: 21,
-	inputHistoryCol: 0,
-	inputHistoryRow: 7,
-	turnOffWhenSuspended: 0,
+        inputHistoryLength: 21,
+        inputHistoryCol: 0,
+        inputHistoryRow: 7,
+        turnOffWhenSuspended: 0,
+        disableWhenP5General: 0,
 };
 
 let buttonLayoutDefinitions = { buttonLayout: {}, buttonLayoutRight: {} };
@@ -102,14 +103,15 @@ const schema = yup.object().shape({
 		.number()
 		.oneOf(DISPLAY_FLIP_MODES.map((o) => o.value))
 		.label('Flip Display'),
-	invertDisplay: yup
-		.number()
-		.oneOf(ON_OFF_OPTIONS.map((o) => o.value))
-		.label('Invert Display'),
-	turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
-	buttonLayout: buttonLayoutSchema,
-	buttonLayoutRight: buttonLayoutRightSchema,
-	buttonLayoutOrientation: yup.number().label('Layout Reversed'),
+        invertDisplay: yup
+                .number()
+                .oneOf(ON_OFF_OPTIONS.map((o) => o.value))
+                .label('Invert Display'),
+        turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
+        disableWhenP5General: yup.number().label('Disable in P5General'),
+        buttonLayout: buttonLayoutSchema,
+        buttonLayoutRight: buttonLayoutRightSchema,
+        buttonLayoutOrientation: yup.number().label('Layout Reversed'),
 	splashMode: yup
 		.number()
 		.required()
@@ -344,25 +346,41 @@ export default function DisplayConfigPage() {
 												<label className="form-label">
 													{t('DisplayConfig:form.power-management-header')}
 												</label>
-												<Form.Check
-													label={t(
-														'DisplayConfig:form.turn-off-when-suspended',
-													)}
-													type="switch"
-													name="turnOffWhenSuspended"
-													className="align-middle"
-													isInvalid={false}
-													checked={Boolean(values.turnOffWhenSuspended)}
-													onChange={(e) => {
-														setFieldValue(
-															'turnOffWhenSuspended',
-															e.target.checked ? 1 : 0,
-														);
-													}}
-												/>
-											</div>
-										</Row>
-									</Tab>
+                                                                                                <Form.Check
+                                                                                                        label={t(
+                                                                                                                'DisplayConfig:form.turn-off-when-suspended',
+                                                                                                        )}
+                                                                                                        type="switch"
+                                                                                                        name="turnOffWhenSuspended"
+                                                                                                        className="align-middle"
+                                                                                                        isInvalid={false}
+                                                                                                        checked={Boolean(values.turnOffWhenSuspended)}
+                                                                                                        onChange={(e) => {
+                                                                                                                setFieldValue(
+                                                                                                                        'turnOffWhenSuspended',
+                                                                                                                        e.target.checked ? 1 : 0,
+                                                                                                                );
+                                                                                                        }}
+                                                                                                />
+                                                                                                <Form.Check
+                                                                                                        label={t(
+                                                                                                                'DisplayConfig:form.disable-when-p5general',
+                                                                                                        )}
+                                                                                                        type="switch"
+                                                                                                        name="disableWhenP5General"
+                                                                                                        className="align-middle"
+                                                                                                        isInvalid={false}
+                                                                                                        checked={Boolean(values.disableWhenP5General)}
+                                                                                                        onChange={(e) => {
+                                                                                                                setFieldValue(
+                                                                                                                        'disableWhenP5General',
+                                                                                                                        e.target.checked ? 1 : 0,
+                                                                                                                );
+                                                                                                        }}
+                                                                                                />
+                                                                                        </div>
+                                                                                </Row>
+                                                                        </Tab>
 									<Tab
 										key="displayLayoutOptions"
 										eventKey="displayLayoutOptions"

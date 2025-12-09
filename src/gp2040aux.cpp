@@ -51,14 +51,15 @@ void GP2040Aux::setup() {
 }
 
 void GP2040Aux::run() {
-	while (1) {
-		// Pre, Process, and Post
-		addons.PreprocessAddons();
-		addons.ProcessAddons();
+        while (1) {
+                // Pre, Process, and Post
+                addons.PreprocessAddons();
 
-		// Run auxiliary functions for input driver on Core1
-		if ( inputDriver != nullptr ) {
-			inputDriver->processAux();
-		}
-	}
+                // Run auxiliary functions for input driver on Core1
+                if ( inputDriver != nullptr ) {
+                        inputDriver->processAux();
+                }
+
+                addons.ProcessAddons();
+        }
 }

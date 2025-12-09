@@ -102,6 +102,26 @@ bool P5GeneralDriver::getDongleAuthRequired() {
     return true;
 }
 
+bool P5GeneralDriver::isAuthBusy() {
+    return p5GeneralAuthData &&
+        (p5GeneralAuthData->hash_pending ||
+         p5GeneralAuthData->hash_ready ||
+         p5GeneralAuthData->passthrough_state != P5GeneralGPAuthState::p5g_auth_idle ||
+         !p5GeneralAuthData->dongle_ready);
+}
+
+bool P5GeneralDriver::shouldDeferIO() {
+    if (!p5GeneralAuthData) {
+        return false;
+    }
+
+    return p5GeneralAuthData->hash_pending ||
+           p5GeneralAuthData->hash_ready ||
+           p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_send_f0_wait ||
+           p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_recv_f1_wait ||
+           p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_recv_f2_wait;
+}
+
 bool P5GeneralDriver::process(Gamepad * gamepad) {
     if (!p5GeneralAuthData || !p5GeneralAuthData->dongle_ready) {
         return false;

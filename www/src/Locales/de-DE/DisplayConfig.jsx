@@ -35,9 +35,10 @@ export default {
 		'splash-mode-label': 'Splash Modus',
 		'splash-duration-label':
 			'Splash Dauer (Sekunden, 0 für immer eingeschaltet)',
-		'display-saver-timeout-label':
-			'Timeout für den Bildschirmschoner (Minuten)',
-		'inverted-label': 'Invertiert',
-		'turn-off-when-suspended': 'Ausschalten im Ruhezustand',
-	},
+                'display-saver-timeout-label':
+                        'Timeout für den Bildschirmschoner (Minuten)',
+                'inverted-label': 'Invertiert',
+                'turn-off-when-suspended': 'Ausschalten im Ruhezustand',
+                'disable-when-p5general': 'OLED im P5General-Modus deaktivieren',
+        },
 };

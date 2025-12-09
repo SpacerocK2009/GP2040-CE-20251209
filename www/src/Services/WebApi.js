@@ -203,16 +203,17 @@ async function resetSettings() {
 
 async function getDisplayOptions() {
 	try {
-		const response = await Http.get(`${baseUrl}/api/getDisplayOptions`);
+                const response = await Http.get(`${baseUrl}/api/getDisplayOptions`);
 
-		response.data.splashDuration = response.data.splashDuration / 1000; // milliseconds to seconds
-		response.data.displaySaverTimeout =
-			response.data.displaySaverTimeout / 60000; // milliseconds to minutes
+                response.data.splashDuration = response.data.splashDuration / 1000; // milliseconds to seconds
+                response.data.displaySaverTimeout =
+                        response.data.displaySaverTimeout / 60000; // milliseconds to minutes
+                response.data.disableWhenP5General = response.data.disableWhenP5General ? 1 : 0;
 
-		return response.data;
-	} catch (error) {
-		console.error(error);
-	}
+                return response.data;
+        } catch (error) {
+                console.error(error);
+        }
 }
 
 async function setDisplayOptions(options, isPreview) {
@@ -223,9 +224,10 @@ async function setDisplayOptions(options, isPreview) {
 	newOptions.buttonLayoutRight = parseInt(options.buttonLayoutRight);
 	newOptions.splashMode = parseInt(options.splashMode);
 	newOptions.splashDuration = parseInt(options.splashDuration) * 1000; // seconds to milliseconds
-	newOptions.displaySaverTimeout =
-		parseInt(options.displaySaverTimeout) * 60000; // minutes to milliseconds
-	newOptions.splashChoice = parseInt(options.splashChoice);
+        newOptions.displaySaverTimeout =
+                parseInt(options.displaySaverTimeout) * 60000; // minutes to milliseconds
+        newOptions.splashChoice = parseInt(options.splashChoice);
+        newOptions.disableWhenP5General = parseInt(options.disableWhenP5General);
 
 	if (newOptions.buttonLayoutCustomOptions) {
 		newOptions.buttonLayoutCustomOptions.params.layout = parseInt(
