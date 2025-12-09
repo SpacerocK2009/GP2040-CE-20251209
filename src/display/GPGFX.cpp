@@ -87,8 +87,8 @@ void GPGFX::clearScreen() {
     this->displayDriver->clear();
 }
 
-void GPGFX::render() {
-    this->displayDriver->drawBuffer(NULL);
+void GPGFX::render(uint8_t pages) {
+    this->displayDriver->drawBuffer(NULL, pages);
 }
 
 uint32_t GPGFX::getPixel(uint16_t x, uint16_t y) {

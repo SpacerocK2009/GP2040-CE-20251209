@@ -30,11 +30,18 @@ const DISPLAY_FLIP_MODES = [
 ];
 
 const DISPLAY_SAVER_MODES = [
-	{ label: 'form.saver-modes.display-off', value: 0 },
-	{ label: 'form.saver-modes.snow', value: 1 },
-	{ label: 'form.saver-modes.bounce', value: 2 },
-	{ label: 'form.saver-modes.pipes', value: 3 },
-	{ label: 'form.saver-modes.toast', value: 4 },
+        { label: 'form.saver-modes.display-off', value: 0 },
+        { label: 'form.saver-modes.snow', value: 1 },
+        { label: 'form.saver-modes.bounce', value: 2 },
+        { label: 'form.saver-modes.pipes', value: 3 },
+        { label: 'form.saver-modes.toast', value: 4 },
+];
+
+const P5G_OLED_MODES = [
+        { label: 'form.p5general-oled-mode.safe', value: 0 },
+        { label: 'form.p5general-oled-mode.low', value: 1 },
+        { label: 'form.p5general-oled-mode.medium', value: 2 },
+        { label: 'form.p5general-oled-mode.high', value: 3 },
 ];
 
 const LAYOUT_ORIENTATION = [
@@ -84,6 +91,7 @@ const defaultValues = {
         turnOffWhenSuspended: 0,
         disableWhenP5General: 0,
         p5GeneralOledSafeMode: 1,
+        p5GeneralOledMode: 2,
 };
 
 let buttonLayoutDefinitions = { buttonLayout: {}, buttonLayoutRight: {} };
@@ -111,6 +119,7 @@ const schema = yup.object().shape({
         turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
         disableWhenP5General: yup.number().label('Disable in P5General'),
         p5GeneralOledSafeMode: yup.number().label('Reduce OLED refresh in P5General'),
+        p5GeneralOledMode: yup.number().label('P5General OLED update rate'),
         buttonLayout: buttonLayoutSchema,
         buttonLayoutRight: buttonLayoutRightSchema,
         buttonLayoutOrientation: yup.number().label('Layout Reversed'),
@@ -396,6 +405,31 @@ export default function DisplayConfigPage() {
                                                                                                                 );
                                                                                                         }}
                                                                                                 />
+                                                                                                <FormSelect
+                                                                                                        label={t('DisplayConfig:form.p5general-oled-mode')}
+                                                                                                        name="p5GeneralOledMode"
+                                                                                                        className="form-select-sm"
+                                                                                                        groupClassName="col-sm-6 mb-3"
+                                                                                                        value={values.p5GeneralOledMode}
+                                                                                                        error={errors.p5GeneralOledMode}
+                                                                                                        isInvalid={errors.p5GeneralOledMode}
+                                                                                                        onChange={handleChange}
+                                                                                                >
+                                                                                                        {P5G_OLED_MODES.map((o) => (
+                                                                                                                <option key={`oled-mode-${o.value}`} value={o.value}>
+                                                                                                                        {t(`DisplayConfig:${o.label}`)}
+                                                                                                                </option>
+                                                                                                        ))}
+                                                                                                </FormSelect>
+                                                                                                <p className="text-body-secondary small mb-1">
+                                                                                                        {t('DisplayConfig:form.p5general-oled-mode-help')}
+                                                                                                </p>
+                                                                                                <ul className="text-body-secondary small">
+                                                                                                        <li>{t('DisplayConfig:form.p5general-oled-mode-descriptions.safe')}</li>
+                                                                                                        <li>{t('DisplayConfig:form.p5general-oled-mode-descriptions.low')}</li>
+                                                                                                        <li>{t('DisplayConfig:form.p5general-oled-mode-descriptions.medium')}</li>
+                                                                                                        <li className="mb-0">{t('DisplayConfig:form.p5general-oled-mode-descriptions.high')}</li>
+                                                                                                </ul>
                                                                                         </div>
                                                                                 </Row>
                                                                         </Tab>

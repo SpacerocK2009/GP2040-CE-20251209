@@ -271,6 +271,7 @@ message DisplayOptions
     optional uint32 inputHistoryRow = 30;
     optional bool disableWhenP5General = 31;
     optional bool p5GeneralOledSafeMode = 32;
+    optional int32 p5GeneralOledMode = 33;
 }
 
 message LEDOptions
