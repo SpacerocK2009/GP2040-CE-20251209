@@ -40,13 +40,14 @@ export default {
 		'splash-mode-label': 'Splash Mode',
 		'splash-duration-label': 'Splash Duration (seconds, 0 for Always On)',
 		'display-saver-timeout-label': 'Display Saver Timeout (minutes, 0 for Off)',
-		'screen-saver-mode-label': 'Display Saver Mode',
-		'inverted-label': 'Inverted',
-		'power-management-header': 'Power Management',
-		'turn-off-when-suspended': 'Turn Off When Suspended',
-		'input-history-label': 'Input History',
-		'display-state': {
-			disabled: 'Disabled',
+                'screen-saver-mode-label': 'Display Saver Mode',
+                'inverted-label': 'Inverted',
+                'power-management-header': 'Power Management',
+                'turn-off-when-suspended': 'Turn Off When Suspended',
+                'disable-when-p5general': 'Disable OLED in P5General mode',
+                'input-history-label': 'Input History',
+                'display-state': {
+                        disabled: 'Disabled',
 			enabled: 'Enabled',
 		},
 		'flip-display': {

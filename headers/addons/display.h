@@ -15,12 +15,14 @@
 #include "GPGFX_UI_types.h"
 #include "GPGFX_UI_screens.h"
 #include "GPGFX_UI_widgets.h"
+#include "drivers/p5general/P5GeneralDriver.h"
 #include "gpaddon.h"
 #include "gamepad.h"
 #include "storagemanager.h"
 #include "peripheralmanager.h"
 #include "peripheral_i2c.h"
 #include "peripheral_spi.h"
+#include "pico/time.h"
 
 #ifndef HAS_I2C_DISPLAY
 #define HAS_I2C_DISPLAY 0
@@ -226,6 +228,12 @@ private:
     GamepadButtonMapping *mapMenuToggle;
     GamepadButtonMapping *mapMenuSelect;
     std::string errorMessage;
+    absolute_time_t nextRenderTime;
+    uint32_t renderIntervalUs = 16000;
+    uint32_t busyDeferUs = 4000;
+    bool disableWhenP5General = false;
+    P5GeneralDriver* p5GeneralDriver = nullptr;
+    bool isP5GeneralMode = false;
 };
 
 #endif

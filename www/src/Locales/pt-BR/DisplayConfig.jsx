@@ -29,9 +29,10 @@ export default {
 		'button-layout-custom-button-radius-label': 'Raio dos Botões',
 		'button-layout-custom-button-padding-label': 'Preenchimento dos Botões',
 		'splash-mode-label': 'Modo de Splash',
-		'splash-duration-label':
-			'Duração do Splash (segundos, 0 para sempre ligado)',
-		'display-saver-timeout-label': 'Tempo Limite do Protetor de Tela (minutos)',
-		'inverted-label': 'Invertido',
-	},
+                'splash-duration-label':
+                        'Duração do Splash (segundos, 0 para sempre ligado)',
+                'display-saver-timeout-label': 'Tempo Limite do Protetor de Tela (minutos)',
+                'inverted-label': 'Invertido',
+                'disable-when-p5general': 'Desativar OLED no modo P5General',
+        },
 };
