@@ -46,11 +46,20 @@ export default {
                 'turn-off-when-suspended': 'Turn Off When Suspended',
                 'disable-when-p5general': 'Disable OLED in P5General mode',
                 'p5general-oled-safe-mode': 'Throttle OLED refresh in P5General (safer)',
+                'p5general-oled-mode': 'P5General OLED pacing',
+                'p5general-oled-mode-help':
+                        'Adjust how aggressively OLED refreshes are spaced out while using P5General on PS5.',
+                'p5general-oled-mode-descriptions': {
+                        safe: 'Balanced: chunked pages at ~32 ms cadence (extra defer when "safe" is on).',
+                        low: 'Low: slowest updates (~120 ms, one page per tick) for minimum I2C time.',
+                        medium: 'Medium: default pacing (~64 ms, two pages per tick) for a steady balance.',
+                        high: 'High: fastest redraw (~32 ms, up to four pages) with the highest I2C load.',
+                },
                 'input-history-label': 'Input History',
                 'display-state': {
                         disabled: 'Disabled',
-			enabled: 'Enabled',
-		},
+                        enabled: 'Enabled',
+                },
 		'flip-display': {
 			none: 'None',
 			flip: 'Flip',
@@ -82,6 +91,12 @@ export default {
 			'socd-mode': 'SOCD Mode',
 			'macro-mode': 'Macro',
 			'profile-mode': 'Profile',
-		},
-	},
+                },
+                'p5general-oled-mode': {
+                        safe: 'Balanced (chunked refresh)',
+                        low: 'Low (slow refresh)',
+                        medium: 'Medium (default)',
+                        high: 'High (fastest)',
+                },
+        },
 };

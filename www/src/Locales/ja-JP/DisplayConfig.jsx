@@ -46,11 +46,20 @@ export default {
                 'turn-off-when-suspended': 'サスペンド中OFFにする',
                 'disable-when-p5general': 'P5GeneralモードではOLEDを無効化',
                 'p5general-oled-safe-mode': 'P5General時はOLED更新を抑制（安全策）',
+                'p5general-oled-mode': 'P5General用 OLED 間引き設定',
+                'p5general-oled-mode-help':
+                        'PS5（Besavior/P5General）利用時に、OLED更新をどの程度間引くかを選びます。値が低いほどI2Cの占有時間が短くなり、入力遅延を抑えやすくなります。各モードは下記の通りで、数値はおおよその目安です。',
+                'p5general-oled-mode-descriptions': {
+                        safe: 'バランス: 約32msごとにページ分割で送信し、表示の滑らかさと入力優先のバランスを狙います。"安全策"オン時はさらに余裕を持たせ、PS5で引っかかりが出たときの初手におすすめ。',
+                        low: 'Low: もっとも控えめ。約120msごとに1ページずつ送信するため、I2C占有時間を最小化しつつ最低限の状態表示だけを維持。遅延が気になるときの安全重視向け。',
+                        medium: 'Medium: 既定値。約64msごとに2ページ送信し、負荷を抑えつつ入力遅延を感じにくい更新速度を維持。通常運用の推奨値。',
+                        high: 'High: 最速。約32msごとに最大4ページ送信して描画を優先。I2C負荷が最も高くなるため、PS5で遅延を感じたらMedium以下に下げてください。',
+                },
                 'input-history-label': '入力履歴',
                 'display-state': {
-			disabled: '無効',
-			enabled: '有効',
-		},
+                        disabled: '無効',
+                        enabled: '有効',
+                },
 		'flip-display': {
 			none: '無し',
 			flip: '180度回転',

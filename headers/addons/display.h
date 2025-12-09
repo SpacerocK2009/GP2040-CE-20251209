@@ -230,9 +230,11 @@ private:
     std::string errorMessage;
     absolute_time_t nextRenderTime;
     uint32_t renderIntervalUs = 16000;
+    uint8_t renderPageLimit = 0;
     uint32_t busyDeferUs = 4000;
     bool disableWhenP5General = false;
     bool p5GeneralOledSafeMode = true;
+    uint8_t p5GeneralOledMode = 0;
     P5GeneralDriver* p5GeneralDriver = nullptr;
     bool isP5GeneralMode = false;
 };
