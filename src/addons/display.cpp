@@ -27,6 +27,7 @@ bool DisplayAddon::available() {
     }
     disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
     p5GeneralOledSafeMode = options.p5GeneralOledSafeMode;
+    p5GeneralOledMode = options.p5GeneralOledMode;
 
     // create the gfx interface
     gpDisplay = new GPGFX();
@@ -79,10 +80,29 @@ void DisplayAddon::setup() {
     turnOffWhenSuspended = options.turnOffWhenSuspended;
     displaySaverMode = options.displaySaverMode;
     busyDeferUs = 4000;
+    renderPageLimit = 0;
     if (isP5GeneralMode) {
-        renderIntervalUs = p5GeneralOledSafeMode ? 32000 : 16000;
-        if (p5GeneralOledSafeMode) {
-            busyDeferUs = 12000;
+        switch (p5GeneralOledMode) {
+            case 0: // Safe (chunked, legacy behaviour)
+                renderIntervalUs = p5GeneralOledSafeMode ? 32000 : 16000;
+                renderPageLimit = p5GeneralOledSafeMode ? 2 : 4;
+                busyDeferUs = 12000;
+                break;
+            case 1: // Low
+                renderIntervalUs = 120000;
+                renderPageLimit = 1;
+                busyDeferUs = 16000;
+                break;
+            case 2: // Medium (default)
+                renderIntervalUs = 64000;
+                renderPageLimit = 2;
+                busyDeferUs = 14000;
+                break;
+            default: // High
+                renderIntervalUs = 32000;
+                renderPageLimit = 4;
+                busyDeferUs = p5GeneralOledSafeMode ? 12000 : 8000;
+                break;
         }
     } else {
         renderIntervalUs = 8000;
@@ -155,6 +175,7 @@ bool DisplayAddon::updateDisplayScreen() {
         return false;
 
     gpScreen->init();
+    gpDisplay->resetPartialState();
     prevDisplayMode = currDisplayMode;
     nextDisplayMode = currDisplayMode;
     return true;
@@ -249,7 +270,7 @@ void DisplayAddon::process() {
     }
 
     int8_t screenReturn = gpScreen->update();
-    gpScreen->draw();
+    gpScreen->draw(renderPageLimit);
 
     if (!configMode && screenReturn < 0) {
         Mask_t values = Storage::getInstance().GetGamepad()->debouncedGpio;

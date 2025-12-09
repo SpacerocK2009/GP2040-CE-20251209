@@ -4,7 +4,7 @@ const bool prioritySort(GPWidget * a, GPWidget * b) {
     return a->getPriority() > b->getPriority();
 }
 
-void GPScreen::draw() {
+void GPScreen::draw(uint8_t pageLimit) {
     getRenderer()->clearScreen();
 
     // draw the display list
@@ -15,7 +15,7 @@ void GPScreen::draw() {
         }
     }
     drawScreen();
-    getRenderer()->render();
+    getRenderer()->render(pageLimit);
 }
 
 void GPScreen::clear() {

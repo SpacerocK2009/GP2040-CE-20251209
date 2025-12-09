@@ -18,7 +18,8 @@ class GPGFX {
 
         // drawing methods
         void clearScreen();
-        void render();
+        void render(uint8_t pages = 0);
+        void resetPartialState() { this->displayDriver->resetPartialState(); }
 
         uint32_t getPixel(uint16_t x, uint16_t y);
         void drawPixel(uint16_t x, uint16_t y, uint32_t color);
