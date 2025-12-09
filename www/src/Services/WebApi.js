@@ -209,6 +209,7 @@ async function getDisplayOptions() {
                 response.data.displaySaverTimeout =
                         response.data.displaySaverTimeout / 60000; // milliseconds to minutes
                 response.data.disableWhenP5General = response.data.disableWhenP5General ? 1 : 0;
+                response.data.p5GeneralOledSafeMode = response.data.p5GeneralOledSafeMode ? 1 : 0;
 
                 return response.data;
         } catch (error) {
@@ -228,6 +229,7 @@ async function setDisplayOptions(options, isPreview) {
                 parseInt(options.displaySaverTimeout) * 60000; // minutes to milliseconds
         newOptions.splashChoice = parseInt(options.splashChoice);
         newOptions.disableWhenP5General = parseInt(options.disableWhenP5General);
+        newOptions.p5GeneralOledSafeMode = parseInt(options.p5GeneralOledSafeMode);
 
 	if (newOptions.buttonLayoutCustomOptions) {
 		newOptions.buttonLayoutCustomOptions.params.layout = parseInt(

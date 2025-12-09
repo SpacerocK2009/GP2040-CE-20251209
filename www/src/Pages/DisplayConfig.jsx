@@ -83,6 +83,7 @@ const defaultValues = {
         inputHistoryRow: 7,
         turnOffWhenSuspended: 0,
         disableWhenP5General: 0,
+        p5GeneralOledSafeMode: 1,
 };
 
 let buttonLayoutDefinitions = { buttonLayout: {}, buttonLayoutRight: {} };
@@ -109,6 +110,7 @@ const schema = yup.object().shape({
                 .label('Invert Display'),
         turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
         disableWhenP5General: yup.number().label('Disable in P5General'),
+        p5GeneralOledSafeMode: yup.number().label('Reduce OLED refresh in P5General'),
         buttonLayout: buttonLayoutSchema,
         buttonLayoutRight: buttonLayoutRightSchema,
         buttonLayoutOrientation: yup.number().label('Layout Reversed'),
@@ -374,6 +376,22 @@ export default function DisplayConfigPage() {
                                                                                                         onChange={(e) => {
                                                                                                                 setFieldValue(
                                                                                                                         'disableWhenP5General',
+                                                                                                                        e.target.checked ? 1 : 0,
+                                                                                                                );
+                                                                                                        }}
+                                                                                                />
+                                                                                                <Form.Check
+                                                                                                        label={t(
+                                                                                                                'DisplayConfig:form.p5general-oled-safe-mode',
+                                                                                                        )}
+                                                                                                        type="switch"
+                                                                                                        name="p5GeneralOledSafeMode"
+                                                                                                        className="align-middle"
+                                                                                                        isInvalid={false}
+                                                                                                        checked={Boolean(values.p5GeneralOledSafeMode)}
+                                                                                                        onChange={(e) => {
+                                                                                                                setFieldValue(
+                                                                                                                        'p5GeneralOledSafeMode',
                                                                                                                         e.target.checked ? 1 : 0,
                                                                                                                 );
                                                                                                         }}

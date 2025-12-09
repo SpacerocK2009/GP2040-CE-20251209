@@ -45,6 +45,7 @@ export default {
                 'power-management-header': 'Güç Yönetimi',
                 'turn-off-when-suspended': 'Askıya Alındığında Kapat',
                 'disable-when-p5general': 'P5General modunda OLED devre dışı',
+                'p5general-oled-safe-mode': 'P5General için OLED yenilemeyi azalt (daha güvenli)',
                 'input-history-label': 'Tuş Geçmişi',
                 'display-state': {
 			disabled: 'Devre dışı',

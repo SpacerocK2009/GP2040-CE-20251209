@@ -45,6 +45,7 @@ export default {
                 'power-management-header': 'Administración de Energía',
                 'turn-off-when-suspended': 'Apagar en Suspensión',
                 'disable-when-p5general': 'Desactivar OLED en modo P5General',
+                'p5general-oled-safe-mode': 'Reducir la actualización OLED en P5General (más seguro)',
                 'input-history-label': 'Historial de Entrada',
                 'display-state': {
 			disabled: 'Desactivado',

@@ -232,6 +232,7 @@ private:
     uint32_t renderIntervalUs = 16000;
     uint32_t busyDeferUs = 4000;
     bool disableWhenP5General = false;
+    bool p5GeneralOledSafeMode = true;
     P5GeneralDriver* p5GeneralDriver = nullptr;
     bool isP5GeneralMode = false;
 };

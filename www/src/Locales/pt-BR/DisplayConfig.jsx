@@ -34,5 +34,6 @@ export default {
                 'display-saver-timeout-label': 'Tempo Limite do Protetor de Tela (minutos)',
                 'inverted-label': 'Invertido',
                 'disable-when-p5general': 'Desativar OLED no modo P5General',
+                'p5general-oled-safe-mode': 'Reduzir atualização do OLED no P5General (mais seguro)',
         },
 };
