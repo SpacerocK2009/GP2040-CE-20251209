@@ -19,30 +19,23 @@ bool DisplayAddon::available() {
     const DisplayOptions& options = Storage::getInstance().getDisplayOptions();
     bool result = false;
 
-    p5GeneralDriver = dynamic_cast<P5GeneralDriver*>(DriverManager::getInstance().getDriver());
-    isP5GeneralMode = p5GeneralDriver != nullptr;
+    isP5GeneralMode = DriverManager::getInstance().getInputMode() == INPUT_MODE_P5GENERAL;
+    p5GeneralDriver = isP5GeneralMode
+        ? static_cast<P5GeneralDriver*>(DriverManager::getInstance().getDriver())
+        : nullptr;
     disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
+
+    // If the display is configured to stay off in P5General mode, avoid touching
+    // the I2C bus entirely so the driver can keep USB timing stable.
+    if (disableWhenP5General || !options.enabled) {
+        return false;
+    }
 
     // create the gfx interface
     gpDisplay = new GPGFX();
     gpOptions = gpDisplay->getAvailableDisplay(GPGFX_DisplayType::DISPLAY_TYPE_NONE);
     if ( gpOptions.displayType != GPGFX_DisplayType::DISPLAY_TYPE_NONE ) {
-        if ( options.enabled && !disableWhenP5General ) {
-            result = true;
-        } else {
-            // Power off our display if its available but disabled in config
-            gpOptions.size = options.size;
-            gpOptions.orientation = options.flip;
-            gpOptions.inverted = options.invert;
-            gpOptions.font.fontData = GP_Font_Standard;
-            gpOptions.font.width = 6;
-            gpOptions.font.height = 8;
-            gpDisplay->init(gpOptions);
-            setDisplayPower(0);
-            delete gpDisplay;
-            gpDisplay = nullptr;
-            result = false;
-        }
+        result = true;
     } else { // No display, delete our GPGFX
         delete gpDisplay;
         gpDisplay = nullptr;
