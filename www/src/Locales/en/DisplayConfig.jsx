@@ -92,11 +92,5 @@ export default {
 			'macro-mode': 'Macro',
 			'profile-mode': 'Profile',
                 },
-                'p5general-oled-mode': {
-                        safe: 'Balanced (chunked refresh)',
-                        low: 'Low (slow refresh)',
-                        medium: 'Medium (default)',
-                        high: 'High (fastest)',
-                },
         },
 };
