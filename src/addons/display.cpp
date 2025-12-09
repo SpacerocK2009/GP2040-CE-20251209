@@ -19,8 +19,12 @@ bool DisplayAddon::available() {
     const DisplayOptions& options = Storage::getInstance().getDisplayOptions();
     bool result = false;
 
-    p5GeneralDriver = dynamic_cast<P5GeneralDriver*>(DriverManager::getInstance().getDriver());
-    isP5GeneralMode = p5GeneralDriver != nullptr;
+    isP5GeneralMode = (DriverManager::getInstance().getInputMode() == INPUT_MODE_P5GENERAL);
+    if (isP5GeneralMode) {
+        p5GeneralDriver = static_cast<P5GeneralDriver*>(DriverManager::getInstance().getDriver());
+    } else {
+        p5GeneralDriver = nullptr;
+    }
     disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
 
     // create the gfx interface
