@@ -232,6 +232,9 @@ private:
     uint32_t renderIntervalUs = 16000;
     uint8_t renderPageLimit = 0;
     uint32_t busyDeferUs = 4000;
+    uint32_t idleRenderIntervalUs = 16000;
+    absolute_time_t nextIdleRenderTime;
+    GamepadState lastGamepadState = {};
     bool disableWhenP5General = false;
     bool p5GeneralOledSafeMode = true;
     uint8_t p5GeneralOledMode = 0;
