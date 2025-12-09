@@ -44,6 +44,8 @@ const P5G_OLED_MODES = [
         { label: 'form.p5general-oled-mode.high', value: 3 },
 ];
 
+const P5G_OLED_MODE_DESCRIPTION_KEYS = ['safe', 'low', 'medium', 'high'];
+
 const LAYOUT_ORIENTATION = [
 	{ label: 'form.layout-modes.standard', value: 0 },
 	{ label: 'form.layout-modes.southpaw', value: 1 },
@@ -421,6 +423,19 @@ export default function DisplayConfigPage() {
                                                                                                                 </option>
                                                                                                         ))}
                                                                                                 </FormSelect>
+                                                                                                <p className="text-body-secondary small mb-1">
+                                                                                                        {t('DisplayConfig:form.p5general-oled-mode-help')}
+                                                                                                </p>
+                                                                                                <ul className="text-body-secondary small">
+                                                                                                        {P5G_OLED_MODE_DESCRIPTION_KEYS.map((key, index) => (
+                                                                                                                <li
+                                                                                                                        key={`p5g-oled-mode-desc-${key}`}
+                                                                                                                        className={index === P5G_OLED_MODE_DESCRIPTION_KEYS.length - 1 ? 'mb-0' : ''}
+                                                                                                                >
+                                                                                                                        {t(`DisplayConfig:form.p5general-oled-mode-descriptions.${key}`)}
+                                                                                                                </li>
+                                                                                                        ))}
+                                                                                                </ul>
                                                                                         </div>
                                                                                 </Row>
                                                                         </Tab>
