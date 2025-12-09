@@ -1,7 +1,7 @@
 # P5General OLED pacing notes
 
 ## Overview
-This change reduces the time the PS5 P5General driver spends stalled by OLED I2C writes while keeping the display usable. Updates are now chunked into smaller page writes, and P5General mode can select an explicit pacing level from the WebConfig UI.
+This change reduces the time the PS5 P5General driver spends stalled by OLED I2C writes while keeping the display usable. Updates are now chunked into smaller page writes, P5General mode can select an explicit pacing level from the WebConfig UI, and idle stretches are auto-throttled so I2C traffic falls back after inputs settle.
 
 To prevent merge conflicts across related branches, the WebConfig guidance lives in one place with a short summary here and the detailed copy in the locale files. If you refresh those strings, mirror the intent in both languages so downstream cherry-picks stay clean.
 
@@ -13,11 +13,11 @@ To prevent merge conflicts across related branches, the WebConfig guidance lives
 ## Scheduling
 - The display addon still runs on core1, but P5General mode now stretches the render interval and limits how many SSD1306 pages are flushed per cycle. This caps each I2C burst and spreads a full frame across multiple frames.
 - Page flushing restarts whenever the UI changes modes to avoid missing sections of a new screen.
-- `p5GeneralOledMode` levels:
-  - `Safe` (0): legacy-friendly chunked refresh (2–4 pages every ~32 ms).
-  - `Low` (1): ~120 ms cadence with single-page writes for minimum bus occupancy.
-  - `Medium` (2, default): ~64 ms cadence with 2-page writes.
-  - `High` (3): faster 32 ms cadence with 4-page writes for best responsiveness.
+- `p5GeneralOledMode` levels now include idle pacing between state changes:
+  - `Safe` (0): legacy-friendly chunked refresh (2–4 pages every ~32 ms) with ~240 ms idle redraws.
+  - `Low` (1): ~120 ms minimum cadence with single-page writes and ~320 ms idle redraws.
+  - `Medium` (2, default): ~64 ms minimum cadence with 2-page writes and ~200 ms idle redraws.
+  - `High` (3): faster 32 ms minimum cadence with 4-page writes and ~120–180 ms idle redraws.
 - The legacy `p5GeneralOledSafeMode` flag still increases defer timing during authentication bursts.
 - WebConfig now shows concise per-level guidance in English and Japanese to clarify cadence and when to pick each mode.
 

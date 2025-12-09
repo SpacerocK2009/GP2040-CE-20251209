@@ -48,12 +48,12 @@ export default {
                 'p5general-oled-safe-mode': 'Throttle OLED refresh in P5General (safer)',
                 'p5general-oled-mode': 'P5General OLED pacing',
                 'p5general-oled-mode-help':
-                        'Adjust how aggressively OLED refreshes are spaced out while using P5General on PS5.',
+                        'Adjust how aggressively OLED refreshes are spaced out while using P5General on PS5; idle periods auto-throttle even further.',
                 'p5general-oled-mode-descriptions': {
-                        safe: 'Balanced: chunked pages at ~32 ms cadence (extra defer when "safe" is on).',
-                        low: 'Low: slowest updates (~120 ms, one page per tick) for minimum I2C time.',
-                        medium: 'Medium: default pacing (~64 ms, two pages per tick) for a steady balance.',
-                        high: 'High: fastest redraw (~32 ms, up to four pages) with the highest I2C load.',
+                        safe: 'Balanced: chunked pages at ~32 ms cadence with a ~240 ms idle redraw (extra defer when "safe" is on).',
+                        low: 'Low: change-driven, slowest updates (~120 ms minimum, ~320 ms idle) and one page per tick.',
+                        medium: 'Medium: default pacing (~64 ms minimum, ~200 ms idle) sending two pages per tick.',
+                        high: 'High: fastest redraw (~32 ms minimum, ~120–180 ms idle) up to four pages per tick.',
                 },
                 'input-history-label': 'Input History',
                 'display-state': {

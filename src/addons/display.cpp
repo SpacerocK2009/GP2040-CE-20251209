@@ -8,6 +8,7 @@
 #include "enums.h"
 #include "storagemanager.h"
 #include "pico/stdlib.h"
+#include <cstring>
 
 #include "drivermanager.h"
 #include "usbdriver.h"
@@ -81,35 +82,43 @@ void DisplayAddon::setup() {
     displaySaverMode = options.displaySaverMode;
     busyDeferUs = 4000;
     renderPageLimit = 0;
+    idleRenderIntervalUs = 32000;
     if (isP5GeneralMode) {
         switch (p5GeneralOledMode) {
             case 0: // Safe (chunked, legacy behaviour)
                 renderIntervalUs = p5GeneralOledSafeMode ? 32000 : 16000;
+                idleRenderIntervalUs = 240000;
                 renderPageLimit = p5GeneralOledSafeMode ? 2 : 4;
                 busyDeferUs = 12000;
                 break;
             case 1: // Low
                 renderIntervalUs = 120000;
+                idleRenderIntervalUs = 320000;
                 renderPageLimit = 1;
                 busyDeferUs = 16000;
                 break;
             case 2: // Medium (default)
                 renderIntervalUs = 64000;
+                idleRenderIntervalUs = 200000;
                 renderPageLimit = 2;
                 busyDeferUs = 14000;
                 break;
             default: // High
                 renderIntervalUs = 32000;
+                idleRenderIntervalUs = p5GeneralOledSafeMode ? 180000 : 120000;
                 renderPageLimit = 4;
                 busyDeferUs = p5GeneralOledSafeMode ? 12000 : 8000;
                 break;
         }
     } else {
         renderIntervalUs = 8000;
+        idleRenderIntervalUs = 32000;
     }
     nextRenderTime = make_timeout_time_us(renderIntervalUs);
+    nextIdleRenderTime = make_timeout_time_us(idleRenderIntervalUs);
 
     prevValues = Storage::getInstance().GetGamepad()->debouncedGpio;
+    memset(&lastGamepadState, 0, sizeof(lastGamepadState));
     prevMillis = getMillis();
 
     // set current display mode
@@ -246,19 +255,33 @@ void DisplayAddon::process() {
         return;
     }
 
-    if (!time_reached(nextRenderTime)) {
-        return;
+    absolute_time_t now = get_absolute_time();
+    Gamepad * gamepad = Storage::getInstance().GetGamepad();
+    bool inputChanged = false;
+
+    if (isP5GeneralMode) {
+        inputChanged = memcmp(&lastGamepadState, &gamepad->state, sizeof(GamepadState)) != 0;
+        if (inputChanged) {
+            lastGamepadState = gamepad->state;
+            if (!time_reached(nextRenderTime)) {
+                nextRenderTime = now;
+            }
+        }
     }
 
-    absolute_time_t now = get_absolute_time();
+    if (!time_reached(nextRenderTime) && !(isP5GeneralMode && time_reached(nextIdleRenderTime)) && nextDisplayMode == currDisplayMode) {
+        return;
+    }
     if (p5GeneralDriver != nullptr) {
         if (p5GeneralDriver->shouldDeferIO()) {
             nextRenderTime = delayed_by_us(now, busyDeferUs);
+            nextIdleRenderTime = delayed_by_us(now, idleRenderIntervalUs);
             return;
         }
 
         if (p5GeneralOledSafeMode && p5GeneralDriver->isAuthBusy()) {
             nextRenderTime = delayed_by_us(now, busyDeferUs);
+            nextIdleRenderTime = delayed_by_us(now, idleRenderIntervalUs);
             return;
         }
     }
@@ -294,6 +317,7 @@ void DisplayAddon::process() {
     }
 
     nextRenderTime = delayed_by_us(now, renderIntervalUs);
+    nextIdleRenderTime = delayed_by_us(now, idleRenderIntervalUs);
 }
 
 const DisplayOptions& DisplayAddon::getDisplayOptions() {
