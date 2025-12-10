@@ -46,11 +46,7 @@ void GridGradient::setupButtons() {
             if (it == layoutLookup.end())
                 continue;
 
-            GridButton button{};
-            button.pixel = pixel;
-            button.row = it->second.first;
-            button.column = it->second.second;
-            button.order = 0;
+            GridButton button{ pixel, it->second.first, it->second.second, 0 };
             discovered.push_back(button);
         }
     }
