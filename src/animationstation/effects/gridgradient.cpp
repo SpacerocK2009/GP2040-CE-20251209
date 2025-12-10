@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
     setupButtons();
@@ -10,62 +11,52 @@ GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
 }
 
 void GridGradient::setupButtons() {
-    struct ButtonLayout {
-        uint32_t mask;
-        uint8_t row;
+    struct ColumnDefinition {
         uint8_t column;
+        std::vector<uint32_t> masks;
     };
 
-    // Fixed 4x4 logical layout
-    const ButtonLayout layout[] = {
-        { GAMEPAD_MASK_A2, 0, 0 }, // TouchpadCenter
-        { GAMEPAD_MASK_B1, 1, 0 }, // Square
-        { GAMEPAD_MASK_B2, 1, 1 }, // Triangle
-        { GAMEPAD_MASK_R1, 1, 2 },
-        { GAMEPAD_MASK_L1, 1, 3 },
-        { GAMEPAD_MASK_B3, 2, 0 }, // Cross
-        { GAMEPAD_MASK_B4, 2, 1 }, // Circle
-        { GAMEPAD_MASK_R2, 2, 2 },
-        { GAMEPAD_MASK_L2, 2, 3 },
-        { GAMEPAD_MASK_L3, 3, 0 },
-        { GAMEPAD_MASK_R3, 3, 1 },
+    const ColumnDefinition columns[] = {
+        { 0, { GAMEPAD_MASK_A2, GAMEPAD_MASK_B1, GAMEPAD_MASK_B3, GAMEPAD_MASK_L3 } }, // TouchpadCenter, Square, Cross, L3
+        { 1, { GAMEPAD_MASK_B2, GAMEPAD_MASK_B4, GAMEPAD_MASK_R3 } },                   // Triangle, Circle, R3
+        { 2, { GAMEPAD_MASK_R1, GAMEPAD_MASK_R2 } },                                    // R1, R2
+        { 3, { GAMEPAD_MASK_L1, GAMEPAD_MASK_L2 } },                                    // L1, L2
     };
 
-    std::map<uint32_t, Pixel> discoveredPixels;
+    // Map masks to all discovered pixels so we can apply press blending correctly
+    std::map<uint32_t, std::vector<Pixel>> maskToPixels;
 
-    // Gather first valid pixel entry for each logical mask
     for (auto &row : matrix->pixels) {
         for (auto &pixel : row) {
             if (pixel.index == NO_PIXEL.index || pixel.positions.empty())
                 continue;
 
-            if (discoveredPixels.find(pixel.mask) == discoveredPixels.end()) {
-                discoveredPixels.emplace(pixel.mask, pixel);
-            }
+            maskToPixels[pixel.mask].push_back(pixel);
         }
     }
 
-    std::vector<GridButton> ordered;
-    uint8_t order = 0;
+    for (auto &column : columnLeds) {
+        column.clear();
+    }
 
-    // Column-major left-to-right, top-to-bottom
-    for (uint8_t col = 0; col < 4; col++) {
-        for (uint8_t row = 0; row < 4; row++) {
-            for (auto &entry : layout) {
-                if (entry.column == col && entry.row == row) {
-                    auto pixelIt = discoveredPixels.find(entry.mask);
-                    if (pixelIt != discoveredPixels.end()) {
-                        const Pixel &pixel = pixelIt->second;
-                        if (pixel.index != NO_PIXEL.index && !pixel.positions.empty()) {
-                            ordered.push_back({ pixel, entry.row, entry.column, order++ });
-                        }
+    gridButtons.clear();
+
+    for (auto &definition : columns) {
+        for (auto mask : definition.masks) {
+            auto it = maskToPixels.find(mask);
+            if (it == maskToPixels.end())
+                continue;
+
+            for (auto &pixel : it->second) {
+                gridButtons.push_back({ pixel, definition.column });
+                for (auto pos : pixel.positions) {
+                    if (pos < 100) {
+                        columnLeds[definition.column].push_back(pos);
                     }
                 }
             }
         }
     }
-
-    gridButtons = std::move(ordered);
 }
 
 void GridGradient::setupLeverPositions() {
@@ -97,34 +88,35 @@ GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
 }
 
 uint32_t GridGradient::getIntervalMs(GridGradientSpeed speed) const {
+    // Render frequently for smooth interpolation; faster speeds tick slightly faster
     switch (speed) {
         case GRID_GRADIENT_SPEED_VERY_SLOW:
-            return 160;
+            return 30;
         case GRID_GRADIENT_SPEED_SLOW:
-            return 120;
+            return 25;
         case GRID_GRADIENT_SPEED_NORMAL:
         default:
-            return 80;
+            return 20;
         case GRID_GRADIENT_SPEED_FAST:
-            return 60;
+            return 16;
         case GRID_GRADIENT_SPEED_VERY_FAST:
-            return 35;
+            return 12;
     }
 }
 
-float GridGradient::getPhaseStep(GridGradientSpeed speed) const {
+uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
     switch (speed) {
         case GRID_GRADIENT_SPEED_VERY_SLOW:
-            return 0.18f;
+            return 1800;
         case GRID_GRADIENT_SPEED_SLOW:
-            return 0.30f;
+            return 1400;
         case GRID_GRADIENT_SPEED_NORMAL:
         default:
-            return 0.45f;
+            return 1000;
         case GRID_GRADIENT_SPEED_FAST:
-            return 0.60f;
+            return 750;
         case GRID_GRADIENT_SPEED_VERY_FAST:
-            return 0.80f;
+            return 500;
     }
 }
 
@@ -143,6 +135,23 @@ uint32_t GridGradient::getPauseMs(GridGradientPause pause) const {
 
 bool GridGradient::isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const {
     return pressedMasks.find(mask) != pressedMasks.end();
+}
+
+RGB GridGradient::interpolate(const RGB &from, const RGB &to, float t) const {
+    RGB out;
+    out.r = static_cast<uint8_t>(from.r + (to.r - from.r) * t);
+    out.g = static_cast<uint8_t>(from.g + (to.g - from.g) * t);
+    out.b = static_cast<uint8_t>(from.b + (to.b - from.b) * t);
+    out.w = static_cast<uint8_t>(from.w + (to.w - from.w) * t);
+    return out;
+}
+
+RGB GridGradient::columnColor(float t, const RGB &colorA, const RGB &colorB) const {
+    if (t <= 0.5f) {
+        return interpolate(colorA, colorB, t / 0.5f);
+    }
+
+    return interpolate(colorB, colorA, (t - 0.5f) / 0.5f);
 }
 
 void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress) {
@@ -225,55 +234,57 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     RGB pressColor(animationOptions.gridButtonPressColor);
 
     uint32_t interval = getIntervalMs(speed);
+    uint32_t columnDurationMs = getColumnDurationMs(speed);
 
-    if (phase == GradientPhase::Pause && time_reached(pauseUntil)) {
-        phase = GradientPhase::ForwardToB;
-        phaseProgress = 0.0f;
-    }
+    if (phase == GradientPhase::Pause) {
+        if (time_reached(pauseUntil)) {
+            phase = GradientPhase::Active;
+            currentColumn = 0;
+            phaseProgress = 0.0f;
+        }
+    } else {
+        float delta = static_cast<float>(updateTimeInMs) / static_cast<float>(columnDurationMs);
+        phaseProgress += delta;
 
-    const size_t totalButtons = gridButtons.size();
+        if (phaseProgress >= 1.0f) {
+            phaseProgress = 0.0f;
+            currentColumn = (currentColumn + 1) % 4;
 
-    if (totalButtons > 0) {
-        if (phase != GradientPhase::Pause) {
-            float phaseStep = getPhaseStep(speed);
-            phaseProgress += phaseStep;
-
-            if (phase == GradientPhase::ForwardToB && phaseProgress >= static_cast<float>(totalButtons)) {
-                phase = GradientPhase::ReturnToA;
-                phaseProgress = 0.0f;
-            } else if (phase == GradientPhase::ReturnToA && phaseProgress >= static_cast<float>(totalButtons)) {
+            if (currentColumn == 0) {
                 uint32_t pauseMs = getPauseMs(pause);
                 if (pauseMs > 0) {
                     phase = GradientPhase::Pause;
                     pauseUntil = make_timeout_time_ms(pauseMs);
-                } else {
-                    phase = GradientPhase::ForwardToB;
                 }
-                phaseProgress = 0.0f;
             }
         }
-    } else {
-        phase = GradientPhase::Pause;
-        phaseProgress = 0.0f;
     }
 
     nextRunTime = make_timeout_time_ms(interval);
 
+    // Determine per-column base colors
+    std::array<RGB, 4> columnColors = { colorA, colorA, colorA, colorA };
+    if (phase == GradientPhase::Active) {
+        columnColors[currentColumn] = columnColor(std::min(phaseProgress, 1.0f), colorA, colorB);
+    }
+
+    // Render base gradient per column
+    for (size_t col = 0; col < columnLeds.size(); col++) {
+        for (auto pos : columnLeds[col]) {
+            if (pos < 100) {
+                frame[pos] = columnColors[col];
+            }
+        }
+    }
+
+    // Apply press overlay per button pixel
     for (auto &button : gridButtons) {
         if (button.pixel.index == NO_PIXEL.index || button.pixel.positions.empty())
             continue;
 
         bool pressed = isMaskPressed(button.pixel.mask, pressedMasks);
-        size_t stepIndex = static_cast<size_t>(std::floor(phaseProgress));
-
-        RGB gradientColor = colorA;
-
-        if (phase == GradientPhase::ForwardToB) {
-            gradientColor = (button.order < stepIndex) ? colorB : colorA;
-        } else if (phase == GradientPhase::ReturnToA) {
-            gradientColor = (button.order < stepIndex) ? colorA : colorB;
-        }
-        RGB resolved = gradientColor;
+        RGB baseColor = columnColors[button.column];
+        RGB resolved = baseColor;
 
         if (pressed) {
             times[button.pixel.index] = coolDownTimeInMs;
@@ -281,7 +292,7 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
             resolved = pressColor;
         } else {
             DecrementFadeCounter(button.pixel.index);
-            resolved = BlendColor(hitColor[button.pixel.index], gradientColor, times[button.pixel.index]);
+            resolved = BlendColor(hitColor[button.pixel.index], baseColor, times[button.pixel.index]);
         }
 
         for (auto pos : button.pixel.positions) {
