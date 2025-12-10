@@ -382,6 +382,21 @@ message AnimationOptions
     optional float alStaticBrightnessCustomThemeX = 54;     // static custom theme brightness
     optional uint32 alCustomStaticThemeIndex = 55;          // custom theme index
     optional uint32 alCustomStaticColorIndex = 56;          // static color index
+
+    optional uint32 gridGradientColorA = 57;
+    optional uint32 gridGradientColorB = 58;
+    optional uint32 gridButtonPressColor = 59;
+    optional GridGradientSpeed gridGradientSpeed = 60;
+    optional GridGradientPause gridGradientPause = 61;
+    optional uint32 gridLeverNormalColor = 62;
+    optional uint32 gridLeverPressColor = 63;
+    optional uint32 gridCaseNormalColor = 64;
+    optional uint32 gridCaseLeverPressColor = 65;
+    // Case LED indices are offsets relative to caseRGBIndex and are clamped at runtime.
+    repeated int32 gridCaseUpIndices = 66 [(nanopb).max_count = 4];
+    repeated int32 gridCaseDownIndices = 67 [(nanopb).max_count = 4];
+    repeated int32 gridCaseRightIndices = 68 [(nanopb).max_count = 4];
+    repeated int32 gridCaseLeftIndices = 69 [(nanopb).max_count = 4];
 }
 
 message BootselButtonOptions

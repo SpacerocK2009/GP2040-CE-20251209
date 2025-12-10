@@ -464,6 +464,26 @@ enum AnimationEffects
     EFFECT_CHASE = 2;
     EFFECT_STATIC_THEME = 3;
     EFFECT_CUSTOM_THEME = 4;
+    EFFECT_GRID_GRADIENT = 5;
+}
+
+enum GridGradientSpeed
+{
+    option (nanopb_enumopt).long_names = false;
+
+    GRID_GRADIENT_SPEED_SLOW = 0;
+    GRID_GRADIENT_SPEED_NORMAL = 1;
+    GRID_GRADIENT_SPEED_FAST = 2;
+}
+
+enum GridGradientPause
+{
+    option (nanopb_enumopt).long_names = false;
+
+    GRID_GRADIENT_PAUSE_0S = 0;
+    GRID_GRADIENT_PAUSE_1S = 1;
+    GRID_GRADIENT_PAUSE_2S = 2;
+    GRID_GRADIENT_PAUSE_3S = 3;
 }
 
 // This has to be kept in sync with LEDFormat in NeoPico.h

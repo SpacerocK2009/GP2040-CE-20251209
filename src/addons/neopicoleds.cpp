@@ -508,6 +508,8 @@ void NeoPicoLEDAddon::process() {
     if (!isValidPin(ledOptions.dataPin) || !time_reached(this->nextRunTime))
         return;
 
+    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
+
     // Get turbo options (turbo RGB led)
     const TurboOptions& turboOptions = Storage::getInstance().getAddonOptions().turboOptions;
     Gamepad * gamepad = Storage::getInstance().GetProcessedGamepad();
@@ -602,15 +604,17 @@ void NeoPicoLEDAddon::process() {
     }
 
     // Case RGB LEDs for a single static color go here
-	if ( ledOptions.caseRGBIndex >= 0 &&
-		ledOptions.caseRGBCount > 0 ) {
-		ambientHotkeys(gamepad);
-		if ( ledOptions.caseRGBType == CASE_RGB_TYPE_AMBIENT ) {
-			this->ambientLightCustom();
-		} else if ( ledOptions.caseRGBType == CASE_RGB_TYPE_LINKED ) {
-			this->ambientLightLinkage(); //Custom mode
-		}
-	}
+    if ( ledOptions.caseRGBIndex >= 0 &&
+            ledOptions.caseRGBCount > 0 ) {
+            if (static_cast<AnimationEffects>(animationOptions.baseAnimationIndex) != AnimationEffects::EFFECT_GRID_GRADIENT) {
+                    ambientHotkeys(gamepad);
+                    if ( ledOptions.caseRGBType == CASE_RGB_TYPE_AMBIENT ) {
+                            this->ambientLightCustom();
+                    } else if ( ledOptions.caseRGBType == CASE_RGB_TYPE_LINKED ) {
+                            this->ambientLightLinkage(); //Custom mode
+                    }
+            }
+    }
 
     neopico.SetFrame(frame);
     neopico.Show();

@@ -591,6 +591,25 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
     INIT_UNSET_PROPERTY(config.animationOptions, alCustomStaticThemeIndex, AMBIENT_CUSTOM_THEME);
     INIT_UNSET_PROPERTY(config.animationOptions, alCustomStaticColorIndex, AMBIENT_STATIC_COLOR);
 
+    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorA, GRID_GRADIENT_COLOR_A);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorB, GRID_GRADIENT_COLOR_B);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridButtonPressColor, GRID_GRADIENT_PRESS_COLOR);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientSpeed, GRID_GRADIENT_SPEED);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientPause, GRID_GRADIENT_PAUSE);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridLeverNormalColor, GRID_GRADIENT_LEVER_NORMAL);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridLeverPressColor, GRID_GRADIENT_LEVER_PRESS);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridCaseNormalColor, GRID_GRADIENT_CASE_NORMAL);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridCaseLeverPressColor, GRID_GRADIENT_CASE_PRESS);
+
+    if (!config.animationOptions.gridCaseUpIndices_count)
+        config.animationOptions.gridCaseUpIndices_count = 0;
+    if (!config.animationOptions.gridCaseDownIndices_count)
+        config.animationOptions.gridCaseDownIndices_count = 0;
+    if (!config.animationOptions.gridCaseLeftIndices_count)
+        config.animationOptions.gridCaseLeftIndices_count = 0;
+    if (!config.animationOptions.gridCaseRightIndices_count)
+        config.animationOptions.gridCaseRightIndices_count = 0;
+
     // addonOptions.bootselButtonOptions
     INIT_UNSET_PROPERTY(config.addonOptions.bootselButtonOptions, enabled, !!BOOTSEL_BUTTON_ENABLED);
     INIT_UNSET_PROPERTY(config.addonOptions.bootselButtonOptions, buttonMap, BOOTSEL_BUTTON_MASK);

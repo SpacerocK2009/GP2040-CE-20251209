@@ -299,6 +299,7 @@ src/animationstation/animationstation.cpp
 src/animationstation/effects/chase.cpp
 src/animationstation/effects/customtheme.cpp
 src/animationstation/effects/customthemepressed.cpp
+src/animationstation/effects/gridgradient.cpp
 src/animationstation/effects/rainbow.cpp
 src/animationstation/effects/staticcolor.cpp
 src/animationstation/effects/statictheme.cpp

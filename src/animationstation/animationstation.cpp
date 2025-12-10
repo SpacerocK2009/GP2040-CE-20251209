@@ -17,10 +17,6 @@ AnimationStation::AnimationStation() {
     linkageModeOfBrightnessX = 0;
     nextChange = nil_time;
     effectCount = TOTAL_EFFECTS;
-    AnimationOptions & animationOptions = Storage::getInstance().getAnimationOptions();
-    if (animationOptions.hasCustomTheme) {
-        effectCount++; // increase our effect count
-    }
 }
 
 void AnimationStation::ConfigureBrightness(uint8_t max, uint8_t steps) {
@@ -100,18 +96,20 @@ void AnimationStation::ChangeAnimation(int changeSize) {
 
 uint16_t AnimationStation::AdjustIndex(int changeSize) {
   AnimationOptions & animationOptions = Storage::getInstance().getAnimationOptions();
+  int newIndex = animationOptions.baseAnimationIndex;
+  int maxIndex = effectCount - 1;
 
-  int newIndex = animationOptions.baseAnimationIndex + changeSize;
+  do {
+    newIndex += changeSize;
 
-  if (newIndex >= effectCount) {
-    return 0;
-  }
+    if (newIndex > maxIndex) {
+      newIndex = 0;
+    } else if (newIndex < 0) {
+      newIndex = maxIndex;
+    }
+  } while (!isEffectAvailable(static_cast<AnimationEffects>(newIndex)));
 
-  if (newIndex < 0) {
-    return (effectCount - 1);
-  }
-
-  return (uint16_t)newIndex;
+  return static_cast<uint16_t>(newIndex);
 }
 
 void AnimationStation::HandlePressed(std::vector<Pixel> pressed) {
@@ -171,6 +169,11 @@ void AnimationStation::SetMode(uint8_t mode) {
   AnimationEffects newEffect =
       static_cast<AnimationEffects>(animationOptions.baseAnimationIndex);
 
+  if (!isEffectAvailable(newEffect)) {
+    newEffect = static_cast<AnimationEffects>(AdjustIndex(1));
+    animationOptions.baseAnimationIndex = newEffect;
+  }
+
   if (this->baseAnimation != nullptr) {
     delete this->baseAnimation;
   }
@@ -196,6 +199,10 @@ void AnimationStation::SetMode(uint8_t mode) {
   case AnimationEffects::EFFECT_CUSTOM_THEME:
     this->baseAnimation = new CustomTheme(matrix);
     this->buttonAnimation = new CustomThemePressed(matrix, lastPressed);
+    break;
+  case AnimationEffects::EFFECT_GRID_GRADIENT:
+    this->baseAnimation = new GridGradient(matrix);
+    this->buttonAnimation = new NoAnimation(matrix);
     break;
   default:
     this->baseAnimation = new StaticColor(matrix);
@@ -247,4 +254,14 @@ void AnimationStation::IncreaseBrightness() {
 
 void AnimationStation::DimBrightnessTo0() {
   brightnessX = 0;
+}
+
+bool AnimationStation::isEffectAvailable(AnimationEffects effect) {
+  AnimationOptions & animationOptions = Storage::getInstance().getAnimationOptions();
+
+  if (effect == AnimationEffects::EFFECT_CUSTOM_THEME && !animationOptions.hasCustomTheme) {
+    return false;
+  }
+
+  return effect <= AnimationEffects::EFFECT_GRID_GRADIENT;
 }

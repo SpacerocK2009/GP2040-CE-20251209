@@ -809,6 +809,7 @@ std::string setLedOptions()
     };
 
     LEDOptions& ledOptions = Storage::getInstance().getLedOptions();
+    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
     docToPin(ledOptions.dataPin, doc, "dataPin");
     readDoc(ledOptions.ledFormat, doc, "ledFormat");
     readDoc(ledOptions.ledLayout, doc, "ledLayout");
@@ -847,6 +848,38 @@ std::string setLedOptions()
     readDoc(ledOptions.caseRGBType, doc, "caseRGBType");
     readDoc(ledOptions.caseRGBIndex, doc, "caseRGBIndex");
     readDoc(ledOptions.caseRGBCount, doc, "caseRGBCount");
+
+    readDoc(animationOptions.gridGradientColorA, doc, "gridGradientColorA");
+    readDoc(animationOptions.gridGradientColorB, doc, "gridGradientColorB");
+    readDoc(animationOptions.gridButtonPressColor, doc, "gridButtonPressColor");
+    readDoc(animationOptions.gridGradientSpeed, doc, "gridGradientSpeed");
+    readDoc(animationOptions.gridGradientPause, doc, "gridGradientPause");
+    readDoc(animationOptions.gridLeverNormalColor, doc, "gridLeverNormalColor");
+    readDoc(animationOptions.gridLeverPressColor, doc, "gridLeverPressColor");
+    readDoc(animationOptions.gridCaseNormalColor, doc, "gridCaseNormalColor");
+    readDoc(animationOptions.gridCaseLeverPressColor, doc, "gridCaseLeverPressColor");
+
+    const auto readCaseDirection = [&](int32_t *dest, size_t &count, const char *key) {
+        if (!doc.containsKey(key)) {
+            return;
+        }
+        JsonArray arr = doc[key].as<JsonArray>();
+        count = 0;
+        for (JsonVariant value : arr) {
+            if (!value.is<int32_t>()) {
+                continue;
+            }
+            if (count >= 4) {
+                break;
+            }
+            dest[count++] = value.as<int32_t>();
+        }
+    };
+
+    readCaseDirection(animationOptions.gridCaseUpIndices, animationOptions.gridCaseUpIndices_count, "gridCaseUpIndices");
+    readCaseDirection(animationOptions.gridCaseDownIndices, animationOptions.gridCaseDownIndices_count, "gridCaseDownIndices");
+    readCaseDirection(animationOptions.gridCaseRightIndices, animationOptions.gridCaseRightIndices_count, "gridCaseRightIndices");
+    readCaseDirection(animationOptions.gridCaseLeftIndices, animationOptions.gridCaseLeftIndices_count, "gridCaseLeftIndices");
 
     EventManager::getInstance().triggerEvent(new GPStorageSaveEvent(true));
     return serialize_json(doc);
@@ -907,6 +940,29 @@ std::string getLedOptions()
     writeDoc(doc, "caseRGBType", ledOptions.caseRGBType);
     writeDoc(doc, "caseRGBIndex", ledOptions.caseRGBIndex);
     writeDoc(doc, "caseRGBCount", ledOptions.caseRGBCount);
+
+    const AnimationOptions& animationOptions = Storage::getInstance().getAnimationOptions();
+    writeDoc(doc, "gridGradientColorA", ((RGB)animationOptions.gridGradientColorA).value(LED_FORMAT_RGB));
+    writeDoc(doc, "gridGradientColorB", ((RGB)animationOptions.gridGradientColorB).value(LED_FORMAT_RGB));
+    writeDoc(doc, "gridButtonPressColor", ((RGB)animationOptions.gridButtonPressColor).value(LED_FORMAT_RGB));
+    writeDoc(doc, "gridGradientSpeed", animationOptions.gridGradientSpeed);
+    writeDoc(doc, "gridGradientPause", animationOptions.gridGradientPause);
+    writeDoc(doc, "gridLeverNormalColor", ((RGB)animationOptions.gridLeverNormalColor).value(LED_FORMAT_RGB));
+    writeDoc(doc, "gridLeverPressColor", ((RGB)animationOptions.gridLeverPressColor).value(LED_FORMAT_RGB));
+    writeDoc(doc, "gridCaseNormalColor", ((RGB)animationOptions.gridCaseNormalColor).value(LED_FORMAT_RGB));
+    writeDoc(doc, "gridCaseLeverPressColor", ((RGB)animationOptions.gridCaseLeverPressColor).value(LED_FORMAT_RGB));
+
+    auto writeArray = [&](const char *key, const int32_t *src, size_t count) {
+        JsonArray arr = doc.createNestedArray(key);
+        for (size_t i = 0; i < count; i++) {
+            arr.add(src[i]);
+        }
+    };
+
+    writeArray("gridCaseUpIndices", animationOptions.gridCaseUpIndices, animationOptions.gridCaseUpIndices_count);
+    writeArray("gridCaseDownIndices", animationOptions.gridCaseDownIndices, animationOptions.gridCaseDownIndices_count);
+    writeArray("gridCaseRightIndices", animationOptions.gridCaseRightIndices, animationOptions.gridCaseRightIndices_count);
+    writeArray("gridCaseLeftIndices", animationOptions.gridCaseLeftIndices, animationOptions.gridCaseLeftIndices_count);
 
     return serialize_json(doc);
 }

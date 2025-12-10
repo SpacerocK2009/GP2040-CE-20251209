@@ -13,6 +13,8 @@
 #include "effects/chase.h"
 #include "effects/customtheme.h"
 #include "effects/customthemepressed.h"
+#include "effects/gridgradient.h"
+#include "effects/noanimation.h"
 #include "effects/rainbow.h"
 #include "effects/staticcolor.h"
 #include "effects/statictheme.h"
@@ -20,7 +22,7 @@
 #include "config.pb.h"
 #include "enums.pb.h"
 
-const int TOTAL_EFFECTS = 4; // Exclude custom theme until verified present
+const int TOTAL_EFFECTS = static_cast<int>(AnimationEffects::EFFECT_GRID_GRADIENT) + 1;
 
 class AnimationStation
 {
@@ -72,6 +74,8 @@ private:
     uint8_t brightnessSteps;
     float brightnessX;
     PixelMatrix matrix;
+
+    bool isEffectAvailable(AnimationEffects effect);
 };
 
 #endif
