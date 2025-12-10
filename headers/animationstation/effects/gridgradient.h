@@ -24,9 +24,10 @@ private:
     };
 
     std::vector<GridButton> gridButtons;
-    std::vector<uint8_t> leverPositions;
+    std::map<uint32_t, std::vector<uint8_t>> leverPositions;
     absolute_time_t nextRunTime = nil_time;
     absolute_time_t pauseUntil = nil_time;
+    bool pauseActive = false;
     float phase = 0.0f;
 
     void setupButtons();
@@ -36,7 +37,6 @@ private:
     uint32_t getIntervalMs(GridGradientSpeed speed) const;
     float getPhaseStep(GridGradientSpeed speed) const;
     uint32_t getPauseMs(GridGradientPause pause) const;
-    bool isLeverDirectionPressed(const std::set<uint32_t> &pressedMasks) const;
     bool isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const;
     void renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress);
 };
