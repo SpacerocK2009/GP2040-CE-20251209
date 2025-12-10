@@ -239,23 +239,19 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     if (phase == GradientPhase::Pause) {
         if (time_reached(pauseUntil)) {
             phase = GradientPhase::Active;
-            currentColumn = 0;
-            phaseProgress = 0.0f;
+            globalPhase = 0.0f;
         }
     } else {
         float delta = static_cast<float>(updateTimeInMs) / static_cast<float>(columnDurationMs);
-        phaseProgress += delta;
+        globalPhase += delta;
 
-        if (phaseProgress >= 1.0f) {
-            phaseProgress = 0.0f;
-            currentColumn = (currentColumn + 1) % 4;
+        if (globalPhase >= 1.0f) {
+            globalPhase = std::fmod(globalPhase, 1.0f);
 
-            if (currentColumn == 0) {
-                uint32_t pauseMs = getPauseMs(pause);
-                if (pauseMs > 0) {
-                    phase = GradientPhase::Pause;
-                    pauseUntil = make_timeout_time_ms(pauseMs);
-                }
+            uint32_t pauseMs = getPauseMs(pause);
+            if (pauseMs > 0) {
+                phase = GradientPhase::Pause;
+                pauseUntil = make_timeout_time_ms(pauseMs);
             }
         }
     }
@@ -265,7 +261,11 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     // Determine per-column base colors
     std::array<RGB, 4> columnColors = { colorA, colorA, colorA, colorA };
     if (phase == GradientPhase::Active) {
-        columnColors[currentColumn] = columnColor(std::min(phaseProgress, 1.0f), colorA, colorB);
+        constexpr float phaseOffset = 1.0f / 4.0f;
+        for (size_t col = 0; col < columnColors.size(); col++) {
+            float columnPhase = std::fmod(globalPhase + static_cast<float>(col) * phaseOffset, 1.0f);
+            columnColors[col] = columnColor(columnPhase, colorA, colorB);
+        }
     }
 
     // Render base gradient per column
