@@ -43,9 +43,11 @@ const CASE_TYPE = [
 ];
 
 const GRID_GRADIENT_SPEED = [
+        { value: 3, label: 'very-slow' },
         { value: 0, label: 'slow' },
         { value: 1, label: 'normal' },
         { value: 2, label: 'fast' },
+        { value: 4, label: 'very-fast' },
 ];
 
 const GRID_GRADIENT_PAUSE = [
@@ -310,9 +312,11 @@ export default function LEDConfigPage() {
         CASE_TYPE[1].label = t(`LedConfig:case.case-type-ambient`);
         CASE_TYPE[2].label = t(`LedConfig:case.case-type-linked`);
 
-        GRID_GRADIENT_SPEED[0].label = t(`LedConfig:grid.speed-slow`);
-        GRID_GRADIENT_SPEED[1].label = t(`LedConfig:grid.speed-normal`);
-        GRID_GRADIENT_SPEED[2].label = t(`LedConfig:grid.speed-fast`);
+        GRID_GRADIENT_SPEED[0].label = t(`LedConfig:grid.speed-very-slow`);
+        GRID_GRADIENT_SPEED[1].label = t(`LedConfig:grid.speed-slow`);
+        GRID_GRADIENT_SPEED[2].label = t(`LedConfig:grid.speed-normal`);
+        GRID_GRADIENT_SPEED[3].label = t(`LedConfig:grid.speed-fast`);
+        GRID_GRADIENT_SPEED[4].label = t(`LedConfig:grid.speed-very-fast`);
 
         GRID_GRADIENT_PAUSE[0].label = t(`LedConfig:grid.pause-0`);
         GRID_GRADIENT_PAUSE[1].label = t(`LedConfig:grid.pause-1`);
