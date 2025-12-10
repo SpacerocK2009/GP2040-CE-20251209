@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <cmath>
 
-static constexpr float TWO_PI = 6.28318530718f;
-static constexpr float COLUMN_OFFSET = 1.57079632679f;
+static constexpr float COLUMN_SPACING = 0.20f;
+static constexpr float COLUMN_RAMP_WIDTH = 0.40f;
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
     setupButtons();
@@ -72,31 +72,48 @@ RGB GridGradient::mixColors(const RGB &a, const RGB &b, float weight) const {
 }
 
 RGB GridGradient::columnColor(uint8_t column, const RGB &colorA, const RGB &colorB) const {
-    float offset = COLUMN_OFFSET * static_cast<float>(3 - column);
-    float value = std::sin(phase + offset);
-    float weight = (value + 1.0f) * 0.5f;
+    float start = (3.0f - static_cast<float>(column)) * COLUMN_SPACING;
+    float weight = (progress - start) / COLUMN_RAMP_WIDTH;
     return mixColors(colorA, colorB, weight);
+}
+
+GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
+    if (value < GRID_GRADIENT_SPEED_SLOW || value > GRID_GRADIENT_SPEED_VERY_FAST) {
+        return GRID_GRADIENT_SPEED_NORMAL;
+    }
+
+    return static_cast<GridGradientSpeed>(value);
 }
 
 uint32_t GridGradient::getIntervalMs(GridGradientSpeed speed) const {
     switch (speed) {
+        case GRID_GRADIENT_SPEED_VERY_SLOW:
+            return 160;
         case GRID_GRADIENT_SPEED_SLOW:
             return 120;
-        case GRID_GRADIENT_SPEED_FAST:
-            return 45;
+        case GRID_GRADIENT_SPEED_NORMAL:
         default:
             return 80;
+        case GRID_GRADIENT_SPEED_FAST:
+            return 60;
+        case GRID_GRADIENT_SPEED_VERY_FAST:
+            return 35;
     }
 }
 
 float GridGradient::getPhaseStep(GridGradientSpeed speed) const {
     switch (speed) {
+        case GRID_GRADIENT_SPEED_VERY_SLOW:
+            return 0.18f;
         case GRID_GRADIENT_SPEED_SLOW:
             return 0.30f;
-        case GRID_GRADIENT_SPEED_FAST:
-            return 0.60f;
+        case GRID_GRADIENT_SPEED_NORMAL:
         default:
             return 0.45f;
+        case GRID_GRADIENT_SPEED_FAST:
+            return 0.60f;
+        case GRID_GRADIENT_SPEED_VERY_FAST:
+            return 0.80f;
     }
 }
 
@@ -127,9 +144,6 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
     }
 
     uint32_t limit = std::min<uint32_t>(count, 100 - start);
-    for (uint32_t i = 0; i < limit; i++) {
-        frame[start + i] = caseNormal;
-    }
 
     struct DirectionConfig {
         uint32_t mask;
@@ -145,6 +159,7 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
         { GAMEPAD_MASK_DL, options.gridCaseLeftIndices_count, options.gridCaseLeftIndices },
     };
 
+    std::set<uint32_t> activeTargets;
     for (auto &config : configs) {
         if (!isMaskPressed(config.mask, pressedMasks))
             continue;
@@ -156,8 +171,22 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
 
             uint32_t target = static_cast<uint32_t>(start + offset);
             if (target >= static_cast<uint32_t>(start) && target < static_cast<uint32_t>(start) + limit) {
-                frame[target] = casePress;
+                activeTargets.insert(target);
             }
+        }
+    }
+
+    for (uint32_t i = 0; i < limit; i++) {
+        uint32_t target = static_cast<uint32_t>(start + i);
+        bool pressed = activeTargets.find(target) != activeTargets.end();
+
+        if (pressed) {
+            times[target] = coolDownTimeInMs;
+            hitColor[target] = casePress;
+            frame[target] = casePress;
+        } else {
+            DecrementFadeCounter(target);
+            frame[target] = BlendColor(hitColor[target], caseNormal, times[target]);
         }
     }
 }
@@ -168,7 +197,7 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     }
 
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    const GridGradientSpeed speed = static_cast<GridGradientSpeed>(animationOptions.gridGradientSpeed);
+    const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
     const GridGradientPause pause = static_cast<GridGradientPause>(animationOptions.gridGradientPause);
 
     UpdateTime();
@@ -188,16 +217,28 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     if (pauseActive && time_reached(pauseUntil)) {
         pauseActive = false;
+        forward = true;
     }
 
     if (!pauseActive) {
-        phase += getPhaseStep(speed);
-        if (phase > TWO_PI) {
-            phase -= TWO_PI;
-            uint32_t pauseMs = getPauseMs(pause);
-            if (pauseMs > 0) {
-                pauseActive = true;
-                pauseUntil = make_timeout_time_ms(pauseMs);
+        float phaseStep = getPhaseStep(speed);
+        if (forward) {
+            progress += phaseStep;
+            if (progress >= 1.0f) {
+                progress = 1.0f;
+                forward = false;
+            }
+        } else {
+            progress -= phaseStep;
+            if (progress <= 0.0f) {
+                progress = 0.0f;
+                uint32_t pauseMs = getPauseMs(pause);
+                if (pauseMs > 0) {
+                    pauseActive = true;
+                    pauseUntil = make_timeout_time_ms(pauseMs);
+                } else {
+                    forward = true;
+                }
             }
         }
     }
@@ -234,19 +275,18 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     RGB leverPress(animationOptions.gridLeverPressColor);
 
     for (auto &entry : leverPositions) {
+        bool pressed = isMaskPressed(entry.first, pressedMasks);
         for (auto pos : entry.second) {
-            if (pos < 100) {
-                frame[pos] = leverNormal;
-            }
-        }
-    }
+            if (pos >= 100)
+                continue;
 
-    for (auto &entry : leverPositions) {
-        if (isMaskPressed(entry.first, pressedMasks)) {
-            for (auto pos : entry.second) {
-                if (pos < 100) {
-                    frame[pos] = leverPress;
-                }
+            if (pressed) {
+                times[pos] = coolDownTimeInMs;
+                hitColor[pos] = leverPress;
+                frame[pos] = leverPress;
+            } else {
+                DecrementFadeCounter(pos);
+                frame[pos] = BlendColor(hitColor[pos], leverNormal, times[pos]);
             }
         }
     }
@@ -260,20 +300,45 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
 void GridGradient::ParameterUp() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    GridGradientSpeed speed = animationOptions.gridGradientSpeed;
-    uint32_t speedValue = static_cast<uint32_t>(speed);
-    speedValue = (speedValue + 1) % 3;
-    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>(speedValue);
+    const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
+    const GridGradientSpeed ordered[] = {
+        GRID_GRADIENT_SPEED_VERY_SLOW,
+        GRID_GRADIENT_SPEED_SLOW,
+        GRID_GRADIENT_SPEED_NORMAL,
+        GRID_GRADIENT_SPEED_FAST,
+        GRID_GRADIENT_SPEED_VERY_FAST,
+    };
+
+    size_t index = 0;
+    while (index < 5 && ordered[index] != speed) {
+        index++;
+    }
+
+    index = (index + 1) % 5;
+    animationOptions.gridGradientSpeed = ordered[index];
 }
 
 void GridGradient::ParameterDown() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    GridGradientSpeed speed = animationOptions.gridGradientSpeed;
-    uint32_t speedValue = static_cast<uint32_t>(speed);
-    if (speedValue == 0) {
-        speedValue = 2;
-    } else {
-        speedValue -= 1;
+    const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
+    const GridGradientSpeed ordered[] = {
+        GRID_GRADIENT_SPEED_VERY_SLOW,
+        GRID_GRADIENT_SPEED_SLOW,
+        GRID_GRADIENT_SPEED_NORMAL,
+        GRID_GRADIENT_SPEED_FAST,
+        GRID_GRADIENT_SPEED_VERY_FAST,
+    };
+
+    size_t index = 0;
+    while (index < 5 && ordered[index] != speed) {
+        index++;
     }
-    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>(speedValue);
+
+    if (index == 0) {
+        index = 4;
+    } else {
+        index--;
+    }
+
+    animationOptions.gridGradientSpeed = ordered[index];
 }

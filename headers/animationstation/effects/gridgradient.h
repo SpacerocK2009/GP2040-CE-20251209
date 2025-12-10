@@ -28,12 +28,14 @@ private:
     absolute_time_t nextRunTime = nil_time;
     absolute_time_t pauseUntil = nil_time;
     bool pauseActive = false;
-    float phase = 0.0f;
+    float progress = 0.0f;
+    bool forward = true;
 
     void setupButtons();
     void setupLeverPositions();
     RGB mixColors(const RGB &a, const RGB &b, float weight) const;
     RGB columnColor(uint8_t column, const RGB &colorA, const RGB &colorB) const;
+    GridGradientSpeed resolveSpeed(int32_t value) const;
     uint32_t getIntervalMs(GridGradientSpeed speed) const;
     float getPhaseStep(GridGradientSpeed speed) const;
     uint32_t getPauseMs(GridGradientPause pause) const;
