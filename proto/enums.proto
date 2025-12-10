@@ -478,16 +478,6 @@ enum GridGradientSpeed
     GRID_GRADIENT_SPEED_VERY_FAST = 4;
 }
 
-enum GridGradientPause
-{
-    option (nanopb_enumopt).long_names = false;
-
-    GRID_GRADIENT_PAUSE_0S = 0;
-    GRID_GRADIENT_PAUSE_1S = 1;
-    GRID_GRADIENT_PAUSE_2S = 2;
-    GRID_GRADIENT_PAUSE_3S = 3;
-}
-
 // This has to be kept in sync with LEDFormat in NeoPico.h
 enum LEDFormat_Proto
 {

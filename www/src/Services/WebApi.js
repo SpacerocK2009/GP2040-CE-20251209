@@ -313,6 +313,8 @@ async function getLedOptions(setLoading) {
                 response.data.pledColor = rgbIntToHex(response.data.pledColor) || '#ffffff';
                 response.data.gridGradientColorA = rgbIntToHex(response.data.gridGradientColorA || 0) || '#000000';
                 response.data.gridGradientColorB = rgbIntToHex(response.data.gridGradientColorB || 0) || '#000000';
+                response.data.gridGradientColorC = rgbIntToHex(response.data.gridGradientColorC || 0) || '#000000';
+                response.data.gridGradientColorD = rgbIntToHex(response.data.gridGradientColorD || 0) || '#000000';
                 response.data.gridButtonPressColor =
                         rgbIntToHex(response.data.gridButtonPressColor || 0) || '#000000';
                 response.data.gridLeverNormalColor =

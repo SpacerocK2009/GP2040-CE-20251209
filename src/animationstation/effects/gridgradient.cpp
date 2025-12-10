@@ -120,19 +120,6 @@ uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
     }
 }
 
-uint32_t GridGradient::getPauseMs(GridGradientPause pause) const {
-    switch (pause) {
-        case GRID_GRADIENT_PAUSE_1S:
-            return 1000;
-        case GRID_GRADIENT_PAUSE_2S:
-            return 2000;
-        case GRID_GRADIENT_PAUSE_3S:
-            return 3000;
-        default:
-            return 0;
-    }
-}
-
 bool GridGradient::isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const {
     return pressedMasks.find(mask) != pressedMasks.end();
 }
@@ -146,12 +133,20 @@ RGB GridGradient::interpolate(const RGB &from, const RGB &to, float t) const {
     return out;
 }
 
-RGB GridGradient::columnColor(float t, const RGB &colorA, const RGB &colorB) const {
-    if (t <= 0.5f) {
-        return interpolate(colorA, colorB, t / 0.5f);
+RGB GridGradient::columnColor(float t, const RGB &colorA, const RGB &colorB, const RGB &colorC, const RGB &colorD) const {
+    if (t < 0.25f) {
+        return interpolate(colorA, colorB, t / 0.25f);
     }
 
-    return interpolate(colorB, colorA, (t - 0.5f) / 0.5f);
+    if (t < 0.50f) {
+        return interpolate(colorB, colorC, (t - 0.25f) / 0.25f);
+    }
+
+    if (t < 0.75f) {
+        return interpolate(colorC, colorD, (t - 0.50f) / 0.25f);
+    }
+
+    return interpolate(colorD, colorA, (t - 0.75f) / 0.25f);
 }
 
 void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress) {
@@ -218,7 +213,6 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
     const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
-    const GridGradientPause pause = static_cast<GridGradientPause>(animationOptions.gridGradientPause);
 
     UpdateTime();
 
@@ -231,41 +225,28 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     RGB colorA(animationOptions.gridGradientColorA);
     RGB colorB(animationOptions.gridGradientColorB);
+    RGB colorC(animationOptions.gridGradientColorC);
+    RGB colorD(animationOptions.gridGradientColorD);
     RGB pressColor(animationOptions.gridButtonPressColor);
 
     uint32_t interval = getIntervalMs(speed);
     uint32_t columnDurationMs = getColumnDurationMs(speed);
 
-    if (phase == GradientPhase::Pause) {
-        if (time_reached(pauseUntil)) {
-            phase = GradientPhase::Active;
-            globalPhase = 0.0f;
-        }
-    } else {
-        float delta = static_cast<float>(updateTimeInMs) / static_cast<float>(columnDurationMs);
-        globalPhase += delta;
+    float delta = static_cast<float>(updateTimeInMs) / static_cast<float>(columnDurationMs);
+    globalPhase += delta;
 
-        if (globalPhase >= 1.0f) {
-            globalPhase = std::fmod(globalPhase, 1.0f);
-
-            uint32_t pauseMs = getPauseMs(pause);
-            if (pauseMs > 0) {
-                phase = GradientPhase::Pause;
-                pauseUntil = make_timeout_time_ms(pauseMs);
-            }
-        }
+    if (globalPhase >= 1.0f) {
+        globalPhase = std::fmod(globalPhase, 1.0f);
     }
 
     nextRunTime = make_timeout_time_ms(interval);
 
     // Determine per-column base colors
     std::array<RGB, 4> columnColors = { colorA, colorA, colorA, colorA };
-    if (phase == GradientPhase::Active) {
-        constexpr float phaseOffset = 1.0f / 4.0f;
-        for (size_t col = 0; col < columnColors.size(); col++) {
-            float columnPhase = std::fmod(globalPhase + static_cast<float>(col) * phaseOffset, 1.0f);
-            columnColors[col] = columnColor(columnPhase, colorA, colorB);
-        }
+    constexpr float phaseOffset = 1.0f / 4.0f;
+    for (size_t col = 0; col < columnColors.size(); col++) {
+        float columnPhase = std::fmod(globalPhase + static_cast<float>(col) * phaseOffset, 1.0f);
+        columnColors[col] = columnColor(columnPhase, colorA, colorB, colorC, colorD);
     }
 
     // Render base gradient per column

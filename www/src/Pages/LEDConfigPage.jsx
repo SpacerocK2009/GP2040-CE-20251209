@@ -50,13 +50,6 @@ const GRID_GRADIENT_SPEED = [
         { value: 4, label: 'very-fast' },
 ];
 
-const GRID_GRADIENT_PAUSE = [
-        { value: 0, label: '0s' },
-        { value: 1, label: '1s' },
-        { value: 2, label: '2s' },
-        { value: 3, label: '3s' },
-];
-
 const defaultValue = {
         brightnessMaximum: 255,
         brightnessSteps: 5,
@@ -80,9 +73,10 @@ const defaultValue = {
         ledButtonMap: {},
         gridGradientColorA: '#0000ff',
         gridGradientColorB: '#ff00ff',
+        gridGradientColorC: '#00ffff',
+        gridGradientColorD: '#ffff00',
         gridButtonPressColor: '#ffffff',
         gridGradientSpeed: 1,
-        gridGradientPause: 0,
         gridLeverNormalColor: '#202020',
         gridLeverPressColor: '#00ffff',
         gridCaseNormalColor: '#000000',
@@ -182,9 +176,10 @@ const schema = yup.object().shape({
         ledButtonMap: yup.object(),
         gridGradientColorA: yup.string().label('Grid Color A').validateColor(),
         gridGradientColorB: yup.string().label('Grid Color B').validateColor(),
+        gridGradientColorC: yup.string().label('Grid Color C').validateColor(),
+        gridGradientColorD: yup.string().label('Grid Color D').validateColor(),
         gridButtonPressColor: yup.string().label('Grid Press Color').validateColor(),
         gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(2),
-        gridGradientPause: yup.number().label('Grid Pause').min(0).max(3),
         gridLeverNormalColor: yup.string().label('Lever Color').validateColor(),
         gridLeverPressColor: yup.string().label('Lever Press Color').validateColor(),
         gridCaseNormalColor: yup.string().label('Case Color').validateColor(),
@@ -318,11 +313,6 @@ export default function LEDConfigPage() {
         GRID_GRADIENT_SPEED[3].label = t(`LedConfig:grid.speed-fast`);
         GRID_GRADIENT_SPEED[4].label = t(`LedConfig:grid.speed-very-fast`);
 
-        GRID_GRADIENT_PAUSE[0].label = t(`LedConfig:grid.pause-0`);
-        GRID_GRADIENT_PAUSE[1].label = t(`LedConfig:grid.pause-1`);
-        GRID_GRADIENT_PAUSE[2].label = t(`LedConfig:grid.pause-2`);
-        GRID_GRADIENT_PAUSE[3].label = t(`LedConfig:grid.pause-3`);
-
 	const ledOrderChanged = (setFieldValue, ledOrderArrays, ledsPerButton) => {
 		if (ledOrderArrays.length === 2) {
 			setRgbLedStartIndex(ledOrderArrays[1].length * (ledsPerButton || 0));
@@ -352,6 +342,8 @@ export default function LEDConfigPage() {
                         pledColor: hexToInt(values.pledColor || '#000000'),
                         gridGradientColorA: hexToInt(values.gridGradientColorA || '#000000'),
                         gridGradientColorB: hexToInt(values.gridGradientColorB || '#000000'),
+                        gridGradientColorC: hexToInt(values.gridGradientColorC || '#000000'),
+                        gridGradientColorD: hexToInt(values.gridGradientColorD || '#000000'),
                         gridButtonPressColor: hexToInt(values.gridButtonPressColor || '#000000'),
                         gridLeverNormalColor: hexToInt(values.gridLeverNormalColor || '#000000'),
                         gridLeverPressColor: hexToInt(values.gridLeverPressColor || '#000000'),
@@ -779,6 +771,36 @@ export default function LEDConfigPage() {
                                                                         }}
                                                                 />
                                                                 <FormControl
+                                                                        label={t('LedConfig:grid.gradient-c')}
+                                                                        name="gridGradientColorC"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientColorC}
+                                                                        error={errors.gridGradientColorC}
+                                                                        isInvalid={errors.gridGradientColorC}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridGradientColorC', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.gradient-d')}
+                                                                        name="gridGradientColorD"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientColorD}
+                                                                        error={errors.gridGradientColorD}
+                                                                        isInvalid={errors.gridGradientColorD}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridGradientColorD', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
                                                                         label={t('LedConfig:grid.button-press')}
                                                                         name="gridButtonPressColor"
                                                                         className="form-control-sm"
@@ -872,27 +894,6 @@ export default function LEDConfigPage() {
                                                                 >
                                                                         {GRID_GRADIENT_SPEED.map((o, i) => (
                                                                                 <option key={`grid-speed-${i}`} value={o.value}>
-                                                                                        {o.label}
-                                                                                </option>
-                                                                        ))}
-                                                                </FormSelect>
-                                                                <FormSelect
-                                                                        label={t('LedConfig:grid.pause-label')}
-                                                                        name="gridGradientPause"
-                                                                        className="form-select-sm"
-                                                                        groupClassName="col-sm-2 mb-3"
-                                                                        value={values.gridGradientPause}
-                                                                        error={errors.gridGradientPause}
-                                                                        isInvalid={errors.gridGradientPause}
-                                                                        onChange={(e) =>
-                                                                                setFieldValue(
-                                                                                        'gridGradientPause',
-                                                                                        parseInt(e.target.value),
-                                                                                )
-                                                                        }
-                                                                >
-                                                                        {GRID_GRADIENT_PAUSE.map((o, i) => (
-                                                                                <option key={`grid-pause-${i}`} value={o.value}>
                                                                                         {o.label}
                                                                                 </option>
                                                                         ))}
