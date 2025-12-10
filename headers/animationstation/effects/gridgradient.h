@@ -29,8 +29,7 @@ private:
     std::map<uint32_t, std::vector<uint8_t>> leverPositions;
     absolute_time_t nextRunTime = nil_time;
     absolute_time_t pauseUntil = nil_time;
-    uint8_t currentColumn = 0;
-    float phaseProgress = 0.0f;
+    float globalPhase = 0.0f;
 
     enum class GradientPhase {
         Active,
