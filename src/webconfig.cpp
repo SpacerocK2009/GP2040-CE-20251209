@@ -859,7 +859,7 @@ std::string setLedOptions()
     readDoc(animationOptions.gridCaseNormalColor, doc, "gridCaseNormalColor");
     readDoc(animationOptions.gridCaseLeverPressColor, doc, "gridCaseLeverPressColor");
 
-    const auto readCaseDirection = [&](int32_t *dest, size_t &count, const char *key) {
+    const auto readCaseDirection = [&](int32_t *dest, pb_size_t &count, const char *key) {
         if (!doc.containsKey(key)) {
             return;
         }
