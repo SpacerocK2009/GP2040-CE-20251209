@@ -251,18 +251,20 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
 void GridGradient::ParameterUp() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    uint32_t speed = animationOptions.gridGradientSpeed;
-    speed = (speed + 1) % 3;
-    animationOptions.gridGradientSpeed = speed;
+    GridGradientSpeed speed = animationOptions.gridGradientSpeed;
+    uint32_t speedValue = static_cast<uint32_t>(speed);
+    speedValue = (speedValue + 1) % 3;
+    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>(speedValue);
 }
 
 void GridGradient::ParameterDown() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    uint32_t speed = animationOptions.gridGradientSpeed;
-    if (speed == 0) {
-        speed = 2;
+    GridGradientSpeed speed = animationOptions.gridGradientSpeed;
+    uint32_t speedValue = static_cast<uint32_t>(speed);
+    if (speedValue == 0) {
+        speedValue = 2;
     } else {
-        speed -= 1;
+        speedValue -= 1;
     }
-    animationOptions.gridGradientSpeed = speed;
+    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>(speedValue);
 }
