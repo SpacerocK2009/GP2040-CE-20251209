@@ -37,32 +37,58 @@ const PLED_LABELS = [
 ];
 
 const CASE_TYPE = [
-	{ value: -1, label: 'Off' },
-	{ value: 0, label: 'Ambient' },
-	{ value: 1, label: 'Linked' },
+        { value: -1, label: 'Off' },
+        { value: 0, label: 'Ambient' },
+        { value: 1, label: 'Linked' },
+];
+
+const GRID_GRADIENT_SPEED = [
+        { value: 0, label: 'slow' },
+        { value: 1, label: 'normal' },
+        { value: 2, label: 'fast' },
+];
+
+const GRID_GRADIENT_PAUSE = [
+        { value: 0, label: '0s' },
+        { value: 1, label: '1s' },
+        { value: 2, label: '2s' },
+        { value: 3, label: '3s' },
 ];
 
 const defaultValue = {
-	brightnessMaximum: 255,
-	brightnessSteps: 5,
-	dataPin: -1,
-	ledFormat: 0,
-	ledLayout: 0,
-	ledsPerButton: 2,
-	pledType: -1,
-	pledPin1: -1,
-	pledPin2: -1,
-	pledPin3: -1,
-	pledPin4: -1,
-	pledIndex1: -1,
-	pledIndex2: -1,
-	pledIndex3: -1,
-	pledIndex4: -1,
-	pledColor: '#00ff00',
-	caseRGBType: 0,
-	caseRGBIndex: -1,
-	caseRGBCount: 0,
-	ledButtonMap: {},
+        brightnessMaximum: 255,
+        brightnessSteps: 5,
+        dataPin: -1,
+        ledFormat: 0,
+        ledLayout: 0,
+        ledsPerButton: 2,
+        pledType: -1,
+        pledPin1: -1,
+        pledPin2: -1,
+        pledPin3: -1,
+        pledPin4: -1,
+        pledIndex1: -1,
+        pledIndex2: -1,
+        pledIndex3: -1,
+        pledIndex4: -1,
+        pledColor: '#00ff00',
+        caseRGBType: 0,
+        caseRGBIndex: -1,
+        caseRGBCount: 0,
+        ledButtonMap: {},
+        gridGradientColorA: '#0000ff',
+        gridGradientColorB: '#ff00ff',
+        gridButtonPressColor: '#ffffff',
+        gridGradientSpeed: 1,
+        gridGradientPause: 0,
+        gridLeverNormalColor: '#202020',
+        gridLeverPressColor: '#00ffff',
+        gridCaseNormalColor: '#000000',
+        gridCaseLeverPressColor: '#ff8000',
+        gridCaseUpIndices: ['', '', '', ''],
+        gridCaseDownIndices: ['', '', '', ''],
+        gridCaseRightIndices: ['', '', '', ''],
+        gridCaseLeftIndices: ['', '', '', ''],
 };
 
 const schema = yup.object().shape({
@@ -142,16 +168,29 @@ const schema = yup.object().shape({
 		.validateMinWhenEqualTo('pledType', 1, 0),
 	turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
 	caseRGBType: yup.number().required().label('Case RGB Type'),
-	caseRGBCount: yup
-		.number()
-		.required()
-		.positive()
-		.integer()
-		.min(0)
-		.max(100)
-		.label('Case RGB Count'),
-	caseRGBIndex: yup.number().label('Case RGB Index').min(-1).max(100),
-	ledButtonMap: yup.object(),
+        caseRGBCount: yup
+                .number()
+                .required()
+                .positive()
+                .integer()
+                .min(0)
+                .max(100)
+                .label('Case RGB Count'),
+        caseRGBIndex: yup.number().label('Case RGB Index').min(-1).max(100),
+        ledButtonMap: yup.object(),
+        gridGradientColorA: yup.string().label('Grid Color A').validateColor(),
+        gridGradientColorB: yup.string().label('Grid Color B').validateColor(),
+        gridButtonPressColor: yup.string().label('Grid Press Color').validateColor(),
+        gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(2),
+        gridGradientPause: yup.number().label('Grid Pause').min(0).max(3),
+        gridLeverNormalColor: yup.string().label('Lever Color').validateColor(),
+        gridLeverPressColor: yup.string().label('Lever Press Color').validateColor(),
+        gridCaseNormalColor: yup.string().label('Case Color').validateColor(),
+        gridCaseLeverPressColor: yup.string().label('Case Press Color').validateColor(),
+        gridCaseUpIndices: yup.array().of(yup.number().integer().min(0).nullable()),
+        gridCaseDownIndices: yup.array().of(yup.number().integer().min(0).nullable()),
+        gridCaseRightIndices: yup.array().of(yup.number().integer().min(0).nullable()),
+        gridCaseLeftIndices: yup.array().of(yup.number().integer().min(0).nullable()),
 });
 
 const createDataSource = (ledButtonMap, buttonLabelType, swapTpShareLabels) => {
@@ -185,12 +224,27 @@ const getLedButtons = (buttonLabels, map, excludeNulls, swapTpShareLabels) => {
 };
 
 const createLedMap = (ledButtons, clear) => {
-	if (!ledButtons) return;
-	return ledButtons.reduce(
-		(acc, btn, index) => ({ ...acc, [btn.id]: clear ? null : index }),
-		{},
-	);
+        if (!ledButtons) return;
+        return ledButtons.reduce(
+                (acc, btn, index) => ({ ...acc, [btn.id]: clear ? null : index }),
+                {},
+        );
 };
+
+const ensureIndexArray = (arr) => {
+        const padded = [...(arr || [])];
+        while (padded.length < 4) padded.push('');
+        return padded.slice(0, 4).map((v) => (v === null || typeof v === 'undefined' ? '' : v));
+};
+
+const sanitizeIndexArray = (arr) =>
+        (arr || [])
+                .map((value) => {
+                        if (value === '' || value === null || typeof value === 'undefined') return null;
+                        const parsed = parseInt(value);
+                        return Number.isNaN(parsed) || parsed < 0 ? null : parsed;
+                })
+                .filter((v) => v !== null);
 
 const FormContext = ({
 	buttonLabelType,
@@ -203,17 +257,23 @@ const FormContext = ({
 
 	useEffect(() => {
 		async function fetchData() {
-			const data = await WebApi.getLedOptions(setLoading);
-			const dataSources = createDataSource(
-				data.ledButtonMap,
-				buttonLabelType,
-				swapTpShareLabels,
-			);
-			setDataSources(dataSources);
-			setValues(data);
-		}
-		fetchData();
-	}, []);
+                        const data = await WebApi.getLedOptions(setLoading);
+                        const dataSources = createDataSource(
+                                data.ledButtonMap,
+                                buttonLabelType,
+                                swapTpShareLabels,
+                        );
+                        setDataSources(dataSources);
+                        setValues({
+                                ...data,
+                                gridCaseUpIndices: ensureIndexArray(data.gridCaseUpIndices),
+                                gridCaseDownIndices: ensureIndexArray(data.gridCaseDownIndices),
+                                gridCaseRightIndices: ensureIndexArray(data.gridCaseRightIndices),
+                                gridCaseLeftIndices: ensureIndexArray(data.gridCaseLeftIndices),
+                        });
+                }
+                fetchData();
+        }, []);
 
 	useEffect(() => {
 		const dataSources = createDataSource(
@@ -228,12 +288,13 @@ const FormContext = ({
 };
 
 export default function LEDConfigPage() {
-	const { buttonLabels, updateUsedPins } = useContext(AppContext);
-	const [saveMessage, setSaveMessage] = useState('');
-	const [dataSources, setDataSources] = useState([[], []]);
-	const [colorPickerTarget, setColorPickerTarget] = useState(null);
-	const [showPicker, setShowPicker] = useState(false);
-	const [rgbLedStartIndex, setRgbLedStartIndex] = useState(0);
+        const { buttonLabels, updateUsedPins } = useContext(AppContext);
+        const [saveMessage, setSaveMessage] = useState('');
+        const [dataSources, setDataSources] = useState([[], []]);
+        const [colorPickerTarget, setColorPickerTarget] = useState(null);
+        const [colorPickerName, setColorPickerName] = useState(null);
+        const [showPicker, setShowPicker] = useState(false);
+        const [rgbLedStartIndex, setRgbLedStartIndex] = useState(0);
 
 	const { buttonLabelType, swapTpShareLabels } = buttonLabels;
 
@@ -245,9 +306,18 @@ export default function LEDConfigPage() {
 		p[1] = t(`LedConfig:pled-index-label`, { index: n });
 	});
 
-	CASE_TYPE[0].label = t(`LedConfig:case.case-type-off`);
-	CASE_TYPE[1].label = t(`LedConfig:case.case-type-ambient`);
-	CASE_TYPE[2].label = t(`LedConfig:case.case-type-linked`);
+        CASE_TYPE[0].label = t(`LedConfig:case.case-type-off`);
+        CASE_TYPE[1].label = t(`LedConfig:case.case-type-ambient`);
+        CASE_TYPE[2].label = t(`LedConfig:case.case-type-linked`);
+
+        GRID_GRADIENT_SPEED[0].label = t(`LedConfig:grid.speed-slow`);
+        GRID_GRADIENT_SPEED[1].label = t(`LedConfig:grid.speed-normal`);
+        GRID_GRADIENT_SPEED[2].label = t(`LedConfig:grid.speed-fast`);
+
+        GRID_GRADIENT_PAUSE[0].label = t(`LedConfig:grid.pause-0`);
+        GRID_GRADIENT_PAUSE[1].label = t(`LedConfig:grid.pause-1`);
+        GRID_GRADIENT_PAUSE[2].label = t(`LedConfig:grid.pause-2`);
+        GRID_GRADIENT_PAUSE[3].label = t(`LedConfig:grid.pause-3`);
 
 	const ledOrderChanged = (setFieldValue, ledOrderArrays, ledsPerButton) => {
 		if (ledOrderArrays.length === 2) {
@@ -259,23 +329,35 @@ export default function LEDConfigPage() {
 		}
 	};
 
-	const ledsPerButtonChanged = (e, handleChange) => {
-		const ledsPerButton = parseInt(e.target.value);
-		setRgbLedStartIndex(dataSources[1].length * (ledsPerButton || 0));
-		handleChange(e);
-	};
+        const ledsPerButtonChanged = (e, handleChange) => {
+                const ledsPerButton = parseInt(e.target.value);
+                setRgbLedStartIndex(dataSources[1].length * (ledsPerButton || 0));
+                handleChange(e);
+        };
 
-	const toggleRgbPledPicker = (e) => {
-		e.stopPropagation();
-		setColorPickerTarget(e.target);
-		setShowPicker(!showPicker);
-	};
+        const toggleColorPicker = (name, e) => {
+                e.stopPropagation();
+                setColorPickerName(name);
+                setColorPickerTarget(e.target);
+                setShowPicker(name === colorPickerName ? !showPicker : true);
+        };
 
-	const onSuccess = async (values) => {
-		const data = {
-			...values,
-			pledColor: hexToInt(values.pledColor || '#000000'),
-		};
+        const onSuccess = async (values) => {
+                const data = {
+                        ...values,
+                        pledColor: hexToInt(values.pledColor || '#000000'),
+                        gridGradientColorA: hexToInt(values.gridGradientColorA || '#000000'),
+                        gridGradientColorB: hexToInt(values.gridGradientColorB || '#000000'),
+                        gridButtonPressColor: hexToInt(values.gridButtonPressColor || '#000000'),
+                        gridLeverNormalColor: hexToInt(values.gridLeverNormalColor || '#000000'),
+                        gridLeverPressColor: hexToInt(values.gridLeverPressColor || '#000000'),
+                        gridCaseNormalColor: hexToInt(values.gridCaseNormalColor || '#000000'),
+                        gridCaseLeverPressColor: hexToInt(values.gridCaseLeverPressColor || '#000000'),
+                        gridCaseUpIndices: sanitizeIndexArray(values.gridCaseUpIndices),
+                        gridCaseDownIndices: sanitizeIndexArray(values.gridCaseDownIndices),
+                        gridCaseRightIndices: sanitizeIndexArray(values.gridCaseRightIndices),
+                        gridCaseLeftIndices: sanitizeIndexArray(values.gridCaseLeftIndices),
+                };
 
 		const success = await WebApi.setLedOptions(data);
 		if (success) updateUsedPins();
@@ -589,34 +671,43 @@ export default function LEDConfigPage() {
 									min={0}
 								/>
 								<FormControl
-									label={t('LedConfig:player.pled-color-label')}
-									hidden={parseInt(values.pledType) !== 1}
-									name="pledColor"
-									className="form-control-sm"
-									groupClassName="col-sm-2 mb-3"
-									value={values.pledColor}
-									error={errors.pledColor}
-									isInvalid={errors.pledColor}
-									onBlur={handleBlur}
-									onClick={toggleRgbPledPicker}
-									onChange={(e) => {
-										handleChange(e);
-										setShowPicker(false);
+                                                                label={t('LedConfig:player.pled-color-label')}
+                                                                hidden={parseInt(values.pledType) !== 1}
+                                                                name="pledColor"
+                                                                className="form-control-sm"
+                                                                groupClassName="col-sm-2 mb-3"
+                                                                value={values.pledColor}
+                                                                error={errors.pledColor}
+                                                                isInvalid={errors.pledColor}
+                                                                onBlur={handleBlur}
+                                                                onClick={(e) => toggleColorPicker('pledColor', e)}
+                                                                onChange={(e) => {
+                                                                        handleChange(e);
+                                                                        setShowPicker(false);
 									}}
 								/>
-								<ColorPicker
-									name="pledColor"
-									types={[{ value: values.pledColor }]}
-									onChange={(c) => setFieldValue('pledColor', c)}
-									onDismiss={() => setShowPicker(false)}
-									placement="top"
-									presetColors={LEDColors.map((c) => ({
-										title: c.name,
-										color: c.value,
-									}))}
-									show={showPicker}
-									target={colorPickerTarget}
-								></ColorPicker>
+                                                                <ColorPicker
+                                                                        name={colorPickerName || 'pledColor'}
+                                                                        types={[
+                                                                                {
+                                                                                        value:
+                                                                                                (colorPickerName && values[colorPickerName]) ||
+                                                                                                values.pledColor,
+                                                                                },
+                                                                        ]}
+                                                                        onChange={(c) => {
+                                                                                setFieldValue(colorPickerName || 'pledColor', c);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                        onDismiss={() => setShowPicker(false)}
+                                                                        placement="top"
+                                                                        presetColors={LEDColors.map((c) => ({
+                                                                                title: c.name,
+                                                                                color: c.value,
+                                                                        }))}
+                                                                        show={showPicker}
+                                                                        target={colorPickerTarget}
+                                                                ></ColorPicker>
 								<div className="col-sm-3 mb-3">
 									<Form.Check
 										label={t('LedConfig:turn-off-when-suspended')}
@@ -636,23 +727,222 @@ export default function LEDConfigPage() {
 							<p hidden={parseInt(values.pledType) !== 0}>
 								{t('LedConfig:player.pwm-sub-header-text')}
 							</p>
-							<p hidden={parseInt(values.pledType) !== 1}>
-								<Trans
-									ns="LedConfig"
-									i18nKey="player.rgb-sub-header-text"
-									rgbLedStartIndex={rgbLedStartIndex}
+                                                <p hidden={parseInt(values.pledType) !== 1}>
+                                                        <Trans
+                                                                ns="LedConfig"
+                                                                i18nKey="player.rgb-sub-header-text"
+                                                                rgbLedStartIndex={rgbLedStartIndex}
 								>
 									For RGB LEDs, the indexes must be after the last LED button
 									defined in <em>RGB LED Button Order</em> section and likely{' '}
 									<strong>starts at index {{ rgbLedStartIndex }}</strong>.
-								</Trans>
-							</p>
-						</Form.Group>
-					</Section>
-					<Section title={t('LedConfig:case.header-text')}>
-						<Form.Group as={Col}>
-							<Row>
-								<FormSelect
+                                                                </Trans>
+                                                        </p>
+                                                </Form.Group>
+                                        </Section>
+                                        <Section title={t('LedConfig:grid.header-text')}>
+                                                <Form.Group as={Col}>
+                                                        <p>{t('LedConfig:grid.sub-header-text')}</p>
+                                                        <Row>
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.gradient-a')}
+                                                                        name="gridGradientColorA"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientColorA}
+                                                                        error={errors.gridGradientColorA}
+                                                                        isInvalid={errors.gridGradientColorA}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridGradientColorA', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.gradient-b')}
+                                                                        name="gridGradientColorB"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientColorB}
+                                                                        error={errors.gridGradientColorB}
+                                                                        isInvalid={errors.gridGradientColorB}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridGradientColorB', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.button-press')}
+                                                                        name="gridButtonPressColor"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridButtonPressColor}
+                                                                        error={errors.gridButtonPressColor}
+                                                                        isInvalid={errors.gridButtonPressColor}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridButtonPressColor', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.lever-normal')}
+                                                                        name="gridLeverNormalColor"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridLeverNormalColor}
+                                                                        error={errors.gridLeverNormalColor}
+                                                                        isInvalid={errors.gridLeverNormalColor}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridLeverNormalColor', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.lever-press')}
+                                                                        name="gridLeverPressColor"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridLeverPressColor}
+                                                                        error={errors.gridLeverPressColor}
+                                                                        isInvalid={errors.gridLeverPressColor}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridLeverPressColor', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                        </Row>
+                                                        <Row>
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.case-normal')}
+                                                                        name="gridCaseNormalColor"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridCaseNormalColor}
+                                                                        error={errors.gridCaseNormalColor}
+                                                                        isInvalid={errors.gridCaseNormalColor}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridCaseNormalColor', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormControl
+                                                                        label={t('LedConfig:grid.case-press')}
+                                                                        name="gridCaseLeverPressColor"
+                                                                        className="form-control-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridCaseLeverPressColor}
+                                                                        error={errors.gridCaseLeverPressColor}
+                                                                        isInvalid={errors.gridCaseLeverPressColor}
+                                                                        onBlur={handleBlur}
+                                                                        onClick={(e) => toggleColorPicker('gridCaseLeverPressColor', e)}
+                                                                        onChange={(e) => {
+                                                                                handleChange(e);
+                                                                                setShowPicker(false);
+                                                                        }}
+                                                                />
+                                                                <FormSelect
+                                                                        label={t('LedConfig:grid.speed-label')}
+                                                                        name="gridGradientSpeed"
+                                                                        className="form-select-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientSpeed}
+                                                                        error={errors.gridGradientSpeed}
+                                                                        isInvalid={errors.gridGradientSpeed}
+                                                                        onChange={(e) =>
+                                                                                setFieldValue(
+                                                                                        'gridGradientSpeed',
+                                                                                        parseInt(e.target.value),
+                                                                                )
+                                                                        }
+                                                                >
+                                                                        {GRID_GRADIENT_SPEED.map((o, i) => (
+                                                                                <option key={`grid-speed-${i}`} value={o.value}>
+                                                                                        {o.label}
+                                                                                </option>
+                                                                        ))}
+                                                                </FormSelect>
+                                                                <FormSelect
+                                                                        label={t('LedConfig:grid.pause-label')}
+                                                                        name="gridGradientPause"
+                                                                        className="form-select-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientPause}
+                                                                        error={errors.gridGradientPause}
+                                                                        isInvalid={errors.gridGradientPause}
+                                                                        onChange={(e) =>
+                                                                                setFieldValue(
+                                                                                        'gridGradientPause',
+                                                                                        parseInt(e.target.value),
+                                                                                )
+                                                                        }
+                                                                >
+                                                                        {GRID_GRADIENT_PAUSE.map((o, i) => (
+                                                                                <option key={`grid-pause-${i}`} value={o.value}>
+                                                                                        {o.label}
+                                                                                </option>
+                                                                        ))}
+                                                                </FormSelect>
+                                                        </Row>
+                                                        <p>{t('LedConfig:grid.case-help-text')}</p>
+                                                        <Row>
+                                                                {[{
+                                                                        name: 'gridCaseUpIndices',
+                                                                        label: t('LedConfig:grid.case-up-label'),
+                                                                },
+                                                                {
+                                                                        name: 'gridCaseDownIndices',
+                                                                        label: t('LedConfig:grid.case-down-label'),
+                                                                },
+                                                                {
+                                                                        name: 'gridCaseRightIndices',
+                                                                        label: t('LedConfig:grid.case-right-label'),
+                                                                },
+                                                                {
+                                                                        name: 'gridCaseLeftIndices',
+                                                                        label: t('LedConfig:grid.case-left-label'),
+                                                                }].map((direction, index) => (
+                                                                        <Col sm={6} md={3} key={`grid-case-${index}`} className="mb-3">
+                                                                                <Form.Label>{direction.label}</Form.Label>
+                                                                                {[0, 1, 2, 3].map((slot) => {
+                                                                                        const dirArray = ensureIndexArray(values[direction.name]);
+                                                                                        return (
+                                                                                                <FormControl
+                                                                                                        key={`${direction.name}-${slot}`}
+                                                                                                        type="number"
+                                                                                                        name={`${direction.name}-${slot}`}
+                                                                                                        className="form-control-sm mb-2"
+                                                                                                        value={dirArray[slot]}
+                                                                                                        min={0}
+                                                                                                        onChange={(e) => {
+                                                                                                                const updatedArray = ensureIndexArray(
+                                                                                                                        values[direction.name],
+                                                                                                                );
+                                                                                                                updatedArray[slot] = e.target.value;
+                                                                                                                setFieldValue(direction.name, updatedArray);
+                                                                                                        }}
+                                                                                                />
+                                                                                        );
+                                                                                })}
+                                                                        </Col>
+                                                                ))}
+                                                        </Row>
+                                                </Form.Group>
+                                        </Section>
+                                        <Section title={t('LedConfig:case.header-text')}>
+                                                <Form.Group as={Col}>
+                                                        <Row>
+                                                                <FormSelect
 									label={t('LedConfig:case.case-type-label')}
 									name="caseRGBType"
 									className="form-select-sm"

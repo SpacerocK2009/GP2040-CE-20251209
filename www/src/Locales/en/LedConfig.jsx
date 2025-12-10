@@ -33,14 +33,41 @@ export default {
 	},
 	'pled-pin-label': 'PLED #{{pin}} GPIO Pin',
 	'pled-index-label': 'PLED #{{index}} Index',
-	'rgb-order': {
-		'header-text': 'RGB LED Button Order',
-		'sub-header-text':
-			'Here you can define which buttons have RGB LEDs and in what order they run from the control board. This is required for certain LED animations and static theme support.',
-		'sub-header1-text':
-			'Drag and drop list items to assign and reorder the RGB LEDs.',
-		'available-header-text': 'Available Buttons',
-		'assigned-header-text': 'Assigned Buttons',
-	},
-	'turn-off-when-suspended': 'Turn Off When Suspended',
+        'rgb-order': {
+                'header-text': 'RGB LED Button Order',
+                'sub-header-text':
+                        'Here you can define which buttons have RGB LEDs and in what order they run from the control board. This is required for certain LED animations and static theme support.',
+                'sub-header1-text':
+                        'Drag and drop list items to assign and reorder the RGB LEDs.',
+                'available-header-text': 'Available Buttons',
+                'assigned-header-text': 'Assigned Buttons',
+        },
+        'turn-off-when-suspended': 'Turn Off When Suspended',
+        grid: {
+                'header-text': 'Grid Gradient Preset',
+                'sub-header-text':
+                        'Configure the built-in grid gradient animation preset. These colors and indices are stored on the controller and can be cycled to with the normal LED animation hotkeys.',
+                'gradient-a': 'Gradient Color A',
+                'gradient-b': 'Gradient Color B',
+                'button-press': 'Button Press Color',
+                'lever-normal': 'Lever Normal Color',
+                'lever-press': 'Lever Press Color',
+                'case-normal': 'Case Normal Color',
+                'case-press': 'Case Lever Press Color',
+                'speed-label': 'Gradient Speed',
+                'pause-label': 'Gradient Pause',
+                'speed-slow': 'Slow',
+                'speed-normal': 'Normal',
+                'speed-fast': 'Fast',
+                'pause-0': '0 seconds',
+                'pause-1': '1 second',
+                'pause-2': '2 seconds',
+                'pause-3': '3 seconds',
+                'case-help-text':
+                        'Case LED indices are offsets from the Case RGB index. Leave entries blank to skip LEDs for that direction.',
+                'case-up-label': 'Case LEDs for Up',
+                'case-down-label': 'Case LEDs for Down',
+                'case-right-label': 'Case LEDs for Right',
+                'case-left-label': 'Case LEDs for Left',
+        },
 };

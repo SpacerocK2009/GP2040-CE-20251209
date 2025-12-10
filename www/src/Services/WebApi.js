@@ -304,18 +304,34 @@ async function setGamepadOptions(options) {
 }
 
 async function getLedOptions(setLoading) {
-	setLoading(true);
+        setLoading(true);
 
-	try {
-		const response = await Http.get(`${baseUrl}/api/getLedOptions`);
-		setLoading(false);
+        try {
+                const response = await Http.get(`${baseUrl}/api/getLedOptions`);
+                setLoading(false);
 
-		response.data.pledColor = rgbIntToHex(response.data.pledColor) || '#ffffff';
+                response.data.pledColor = rgbIntToHex(response.data.pledColor) || '#ffffff';
+                response.data.gridGradientColorA = rgbIntToHex(response.data.gridGradientColorA || 0) || '#000000';
+                response.data.gridGradientColorB = rgbIntToHex(response.data.gridGradientColorB || 0) || '#000000';
+                response.data.gridButtonPressColor =
+                        rgbIntToHex(response.data.gridButtonPressColor || 0) || '#000000';
+                response.data.gridLeverNormalColor =
+                        rgbIntToHex(response.data.gridLeverNormalColor || 0) || '#000000';
+                response.data.gridLeverPressColor =
+                        rgbIntToHex(response.data.gridLeverPressColor || 0) || '#000000';
+                response.data.gridCaseNormalColor =
+                        rgbIntToHex(response.data.gridCaseNormalColor || 0) || '#000000';
+                response.data.gridCaseLeverPressColor =
+                        rgbIntToHex(response.data.gridCaseLeverPressColor || 0) || '#000000';
+                response.data.gridCaseUpIndices = response.data.gridCaseUpIndices || [];
+                response.data.gridCaseDownIndices = response.data.gridCaseDownIndices || [];
+                response.data.gridCaseRightIndices = response.data.gridCaseRightIndices || [];
+                response.data.gridCaseLeftIndices = response.data.gridCaseLeftIndices || [];
 
-		return response.data;
-	} catch (error) {
-		setLoading(false);
-		console.error(error);
+                return response.data;
+        } catch (error) {
+                setLoading(false);
+                console.error(error);
 	}
 }
 
