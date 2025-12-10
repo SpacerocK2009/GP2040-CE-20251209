@@ -28,25 +28,16 @@ private:
     std::vector<GridButton> gridButtons;
     std::map<uint32_t, std::vector<uint8_t>> leverPositions;
     absolute_time_t nextRunTime = nil_time;
-    absolute_time_t pauseUntil = nil_time;
     float globalPhase = 0.0f;
-
-    enum class GradientPhase {
-        Active,
-        Pause
-    };
-
-    GradientPhase phase = GradientPhase::Active;
 
     void setupButtons();
     void setupLeverPositions();
     GridGradientSpeed resolveSpeed(int32_t value) const;
     uint32_t getIntervalMs(GridGradientSpeed speed) const;
     uint32_t getColumnDurationMs(GridGradientSpeed speed) const;
-    uint32_t getPauseMs(GridGradientPause pause) const;
     bool isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const;
     RGB interpolate(const RGB &from, const RGB &to, float t) const;
-    RGB columnColor(float t, const RGB &colorA, const RGB &colorB) const;
+    RGB columnColor(float t, const RGB &colorA, const RGB &colorB, const RGB &colorC, const RGB &colorD) const;
     void renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress);
 };
 
