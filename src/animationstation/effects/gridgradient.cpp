@@ -16,6 +16,7 @@ void GridGradient::setupButtons() {
         uint8_t column;
     };
 
+    // Fixed 4x4 logical layout
     const ButtonLayout layout[] = {
         { GAMEPAD_MASK_A2, 0, 0 }, // TouchpadCenter
         { GAMEPAD_MASK_B1, 1, 0 }, // Square
@@ -30,38 +31,41 @@ void GridGradient::setupButtons() {
         { GAMEPAD_MASK_R3, 3, 1 },
     };
 
-    std::map<uint32_t, std::pair<uint8_t, uint8_t>> layoutLookup;
-    for (auto &entry : layout) {
-        layoutLookup.emplace(entry.mask, std::make_pair(entry.row, entry.column));
-    }
+    std::map<uint32_t, Pixel> discoveredPixels;
 
-    std::vector<GridButton> discovered;
-
+    // Gather first valid pixel entry for each logical mask
     for (auto &row : matrix->pixels) {
         for (auto &pixel : row) {
             if (pixel.index == NO_PIXEL.index || pixel.positions.empty())
                 continue;
 
-            auto it = layoutLookup.find(pixel.mask);
-            if (it == layoutLookup.end())
-                continue;
-
-            GridButton button{ pixel, it->second.first, it->second.second, 0 };
-            discovered.push_back(button);
+            if (discoveredPixels.find(pixel.mask) == discoveredPixels.end()) {
+                discoveredPixels.emplace(pixel.mask, pixel);
+            }
         }
     }
 
-    std::sort(discovered.begin(), discovered.end(), [](const GridButton &a, const GridButton &b) {
-        if (a.row == b.row)
-            return a.column < b.column;
-        return a.row < b.row;
-    });
+    std::vector<GridButton> ordered;
+    uint8_t order = 0;
 
-    for (size_t i = 0; i < discovered.size(); i++) {
-        discovered[i].order = static_cast<uint8_t>(i);
+    // Column-major left-to-right, top-to-bottom
+    for (uint8_t col = 0; col < 4; col++) {
+        for (uint8_t row = 0; row < 4; row++) {
+            for (auto &entry : layout) {
+                if (entry.column == col && entry.row == row) {
+                    auto pixelIt = discoveredPixels.find(entry.mask);
+                    if (pixelIt != discoveredPixels.end()) {
+                        const Pixel &pixel = pixelIt->second;
+                        if (pixel.index != NO_PIXEL.index && !pixel.positions.empty()) {
+                            ordered.push_back({ pixel, entry.row, entry.column, order++ });
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    gridButtons = std::move(discovered);
+    gridButtons = std::move(ordered);
 }
 
 void GridGradient::setupLeverPositions() {
@@ -222,43 +226,35 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     uint32_t interval = getIntervalMs(speed);
 
-    if (pauseActive && time_reached(pauseUntil)) {
-        pauseActive = false;
+    if (phase == GradientPhase::Pause && time_reached(pauseUntil)) {
         phase = GradientPhase::ForwardToB;
         phaseProgress = 0.0f;
     }
 
     const size_t totalButtons = gridButtons.size();
 
-    if (!pauseActive && totalButtons > 0) {
-        float phaseStep = getPhaseStep(speed);
-        phaseProgress += phaseStep;
+    if (totalButtons > 0) {
+        if (phase != GradientPhase::Pause) {
+            float phaseStep = getPhaseStep(speed);
+            phaseProgress += phaseStep;
 
-        switch (phase) {
-            case GradientPhase::ForwardToB:
-                if (phaseProgress >= static_cast<float>(totalButtons)) {
-                    phase = GradientPhase::ReturnToA;
-                    phaseProgress = 0.0f;
-                }
-                break;
-            case GradientPhase::ReturnToA:
-                if (phaseProgress >= static_cast<float>(totalButtons)) {
-                    uint32_t pauseMs = getPauseMs(pause);
-                    if (pauseMs > 0) {
-                        pauseActive = true;
-                        pauseUntil = make_timeout_time_ms(pauseMs);
-                        phase = GradientPhase::Pause;
-                    } else {
-                        phase = GradientPhase::ForwardToB;
-                    }
-                    phaseProgress = 0.0f;
-                }
-                break;
-            case GradientPhase::Pause:
-                phase = GradientPhase::ForwardToB;
+            if (phase == GradientPhase::ForwardToB && phaseProgress >= static_cast<float>(totalButtons)) {
+                phase = GradientPhase::ReturnToA;
                 phaseProgress = 0.0f;
-                break;
+            } else if (phase == GradientPhase::ReturnToA && phaseProgress >= static_cast<float>(totalButtons)) {
+                uint32_t pauseMs = getPauseMs(pause);
+                if (pauseMs > 0) {
+                    phase = GradientPhase::Pause;
+                    pauseUntil = make_timeout_time_ms(pauseMs);
+                } else {
+                    phase = GradientPhase::ForwardToB;
+                }
+                phaseProgress = 0.0f;
+            }
         }
+    } else {
+        phase = GradientPhase::Pause;
+        phaseProgress = 0.0f;
     }
 
     nextRunTime = make_timeout_time_ms(interval);
@@ -272,12 +268,10 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
         RGB gradientColor = colorA;
 
-        if (!pauseActive) {
-            if (phase == GradientPhase::ForwardToB) {
-                gradientColor = (button.order < stepIndex) ? colorB : colorA;
-            } else if (phase == GradientPhase::ReturnToA) {
-                gradientColor = (button.order < stepIndex) ? colorA : colorB;
-            }
+        if (phase == GradientPhase::ForwardToB) {
+            gradientColor = (button.order < stepIndex) ? colorB : colorA;
+        } else if (phase == GradientPhase::ReturnToA) {
+            gradientColor = (button.order < stepIndex) ? colorA : colorB;
         }
         RGB resolved = gradientColor;
 
