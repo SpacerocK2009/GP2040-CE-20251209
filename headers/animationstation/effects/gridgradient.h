@@ -20,7 +20,9 @@ public:
 private:
     struct GridButton {
         Pixel pixel;
+        uint8_t row;
         uint8_t column;
+        uint8_t order;
     };
 
     std::vector<GridButton> gridButtons;
@@ -28,13 +30,18 @@ private:
     absolute_time_t nextRunTime = nil_time;
     absolute_time_t pauseUntil = nil_time;
     bool pauseActive = false;
-    float progress = 0.0f;
-    bool forward = true;
+    float phaseProgress = 0.0f;
+
+    enum class GradientPhase {
+        ForwardToB,
+        ReturnToA,
+        Pause
+    };
+
+    GradientPhase phase = GradientPhase::ForwardToB;
 
     void setupButtons();
     void setupLeverPositions();
-    RGB mixColors(const RGB &a, const RGB &b, float weight) const;
-    RGB columnColor(uint8_t column, const RGB &colorA, const RGB &colorB) const;
     GridGradientSpeed resolveSpeed(int32_t value) const;
     uint32_t getIntervalMs(GridGradientSpeed speed) const;
     float getPhaseStep(GridGradientSpeed speed) const;

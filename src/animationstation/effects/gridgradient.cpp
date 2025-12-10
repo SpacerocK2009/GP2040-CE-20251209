@@ -4,42 +4,68 @@
 #include <algorithm>
 #include <cmath>
 
-static constexpr float COLUMN_SPACING = 0.20f;
-static constexpr float COLUMN_RAMP_WIDTH = 0.40f;
-
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
     setupButtons();
     setupLeverPositions();
 }
 
 void GridGradient::setupButtons() {
-    const std::vector<std::pair<uint32_t, uint8_t>> buttonMap = {
-        { GAMEPAD_MASK_A2, 0 },
-        { GAMEPAD_MASK_B3, 0 },
-        { GAMEPAD_MASK_B4, 1 },
-        { GAMEPAD_MASK_R1, 2 },
-        { GAMEPAD_MASK_L1, 3 },
-        { GAMEPAD_MASK_B1, 0 },
-        { GAMEPAD_MASK_B2, 1 },
-        { GAMEPAD_MASK_R2, 2 },
-        { GAMEPAD_MASK_L2, 3 },
-        { GAMEPAD_MASK_L3, 0 },
-        { GAMEPAD_MASK_R3, 1 },
+    struct ButtonLayout {
+        uint32_t mask;
+        uint8_t row;
+        uint8_t column;
     };
+
+    const ButtonLayout layout[] = {
+        { GAMEPAD_MASK_A2, 0, 0 }, // TouchpadCenter
+        { GAMEPAD_MASK_B1, 1, 0 }, // Square
+        { GAMEPAD_MASK_B2, 1, 1 }, // Triangle
+        { GAMEPAD_MASK_R1, 1, 2 },
+        { GAMEPAD_MASK_L1, 1, 3 },
+        { GAMEPAD_MASK_B3, 2, 0 }, // Cross
+        { GAMEPAD_MASK_B4, 2, 1 }, // Circle
+        { GAMEPAD_MASK_R2, 2, 2 },
+        { GAMEPAD_MASK_L2, 2, 3 },
+        { GAMEPAD_MASK_L3, 3, 0 },
+        { GAMEPAD_MASK_R3, 3, 1 },
+    };
+
+    std::map<uint32_t, std::pair<uint8_t, uint8_t>> layoutLookup;
+    for (auto &entry : layout) {
+        layoutLookup.emplace(entry.mask, std::make_pair(entry.row, entry.column));
+    }
+
+    std::vector<GridButton> discovered;
 
     for (auto &row : matrix->pixels) {
         for (auto &pixel : row) {
-            if (pixel.index == NO_PIXEL.index)
+            if (pixel.index == NO_PIXEL.index || pixel.positions.empty())
                 continue;
 
-            for (auto &mapping : buttonMap) {
-                if (pixel.mask == mapping.first && !pixel.positions.empty()) {
-                    gridButtons.push_back({pixel, mapping.second});
-                    break;
-                }
-            }
+            auto it = layoutLookup.find(pixel.mask);
+            if (it == layoutLookup.end())
+                continue;
+
+            GridButton button{};
+            button.pixel = pixel;
+            button.row = it->second.first;
+            button.column = it->second.second;
+            button.order = 0;
+            discovered.push_back(button);
         }
     }
+
+    std::sort(discovered.begin(), discovered.end(), [](const GridButton &a, const GridButton &b) {
+        if (a.row == b.row)
+            return a.column < b.column;
+        return a.row < b.row;
+    });
+
+    for (size_t i = 0; i < discovered.size(); i++) {
+        discovered[i].order = static_cast<uint8_t>(i);
+    }
+
+    gridButtons = std::move(discovered);
 }
 
 void GridGradient::setupLeverPositions() {
@@ -60,21 +86,6 @@ void GridGradient::setupLeverPositions() {
             }
         }
     }
-}
-
-RGB GridGradient::mixColors(const RGB &a, const RGB &b, float weight) const {
-    float clamped = std::clamp(weight, 0.0f, 1.0f);
-    return RGB(
-        static_cast<uint8_t>(a.r + (b.r - a.r) * clamped),
-        static_cast<uint8_t>(a.g + (b.g - a.g) * clamped),
-        static_cast<uint8_t>(a.b + (b.b - a.b) * clamped)
-    );
-}
-
-RGB GridGradient::columnColor(uint8_t column, const RGB &colorA, const RGB &colorB) const {
-    float start = (3.0f - static_cast<float>(column)) * COLUMN_SPACING;
-    float weight = (progress - start) / COLUMN_RAMP_WIDTH;
-    return mixColors(colorA, colorB, weight);
 }
 
 GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
@@ -217,29 +228,40 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     if (pauseActive && time_reached(pauseUntil)) {
         pauseActive = false;
-        forward = true;
+        phase = GradientPhase::ForwardToB;
+        phaseProgress = 0.0f;
     }
 
-    if (!pauseActive) {
+    const size_t totalButtons = gridButtons.size();
+
+    if (!pauseActive && totalButtons > 0) {
         float phaseStep = getPhaseStep(speed);
-        if (forward) {
-            progress += phaseStep;
-            if (progress >= 1.0f) {
-                progress = 1.0f;
-                forward = false;
-            }
-        } else {
-            progress -= phaseStep;
-            if (progress <= 0.0f) {
-                progress = 0.0f;
-                uint32_t pauseMs = getPauseMs(pause);
-                if (pauseMs > 0) {
-                    pauseActive = true;
-                    pauseUntil = make_timeout_time_ms(pauseMs);
-                } else {
-                    forward = true;
+        phaseProgress += phaseStep;
+
+        switch (phase) {
+            case GradientPhase::ForwardToB:
+                if (phaseProgress >= static_cast<float>(totalButtons)) {
+                    phase = GradientPhase::ReturnToA;
+                    phaseProgress = 0.0f;
                 }
-            }
+                break;
+            case GradientPhase::ReturnToA:
+                if (phaseProgress >= static_cast<float>(totalButtons)) {
+                    uint32_t pauseMs = getPauseMs(pause);
+                    if (pauseMs > 0) {
+                        pauseActive = true;
+                        pauseUntil = make_timeout_time_ms(pauseMs);
+                        phase = GradientPhase::Pause;
+                    } else {
+                        phase = GradientPhase::ForwardToB;
+                    }
+                    phaseProgress = 0.0f;
+                }
+                break;
+            case GradientPhase::Pause:
+                phase = GradientPhase::ForwardToB;
+                phaseProgress = 0.0f;
+                break;
         }
     }
 
@@ -250,9 +272,17 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
             continue;
 
         bool pressed = isMaskPressed(button.pixel.mask, pressedMasks);
-        RGB gradientColor = (pauseActive && getPauseMs(pause) > 0)
-            ? colorA
-            : columnColor(button.column, colorA, colorB);
+        size_t stepIndex = static_cast<size_t>(std::floor(phaseProgress));
+
+        RGB gradientColor = colorA;
+
+        if (!pauseActive) {
+            if (phase == GradientPhase::ForwardToB) {
+                gradientColor = (button.order < stepIndex) ? colorB : colorA;
+            } else if (phase == GradientPhase::ReturnToA) {
+                gradientColor = (button.order < stepIndex) ? colorA : colorB;
+            }
+        }
         RGB resolved = gradientColor;
 
         if (pressed) {
