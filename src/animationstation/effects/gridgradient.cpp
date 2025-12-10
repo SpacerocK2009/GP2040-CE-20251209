@@ -23,8 +23,8 @@ void GridGradient::setupButtons() {
         { GAMEPAD_MASK_B2, 1 },
         { GAMEPAD_MASK_R2, 2 },
         { GAMEPAD_MASK_L2, 3 },
-        { GAMEPAD_MASK_R3, 0 },
-        { GAMEPAD_MASK_L3, 1 },
+        { GAMEPAD_MASK_L3, 0 },
+        { GAMEPAD_MASK_R3, 1 },
     };
 
     for (auto &row : matrix->pixels) {
@@ -43,7 +43,6 @@ void GridGradient::setupButtons() {
 }
 
 void GridGradient::setupLeverPositions() {
-    std::set<uint8_t> leverIndex;
     const uint32_t leverMasks[] = { GAMEPAD_MASK_DU, GAMEPAD_MASK_DD, GAMEPAD_MASK_DL, GAMEPAD_MASK_DR };
 
     for (auto &row : matrix->pixels) {
@@ -54,15 +53,13 @@ void GridGradient::setupLeverPositions() {
             for (auto mask : leverMasks) {
                 if (pixel.mask == mask) {
                     for (auto pos : pixel.positions) {
-                        leverIndex.insert(pos);
+                        leverPositions[mask].push_back(pos);
                     }
                     break;
                 }
             }
         }
     }
-
-    leverPositions.assign(leverIndex.begin(), leverIndex.end());
 }
 
 RGB GridGradient::mixColors(const RGB &a, const RGB &b, float weight) const {
@@ -118,13 +115,6 @@ uint32_t GridGradient::getPauseMs(GridGradientPause pause) const {
 
 bool GridGradient::isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const {
     return pressedMasks.find(mask) != pressedMasks.end();
-}
-
-bool GridGradient::isLeverDirectionPressed(const std::set<uint32_t> &pressedMasks) const {
-    return isMaskPressed(GAMEPAD_MASK_DU, pressedMasks) ||
-           isMaskPressed(GAMEPAD_MASK_DD, pressedMasks) ||
-           isMaskPressed(GAMEPAD_MASK_DL, pressedMasks) ||
-           isMaskPressed(GAMEPAD_MASK_DR, pressedMasks);
 }
 
 void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress) {
@@ -196,12 +186,17 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     uint32_t interval = getIntervalMs(speed);
 
-    if (time_reached(pauseUntil)) {
+    if (pauseActive && time_reached(pauseUntil)) {
+        pauseActive = false;
+    }
+
+    if (!pauseActive) {
         phase += getPhaseStep(speed);
         if (phase > TWO_PI) {
             phase -= TWO_PI;
             uint32_t pauseMs = getPauseMs(pause);
             if (pauseMs > 0) {
+                pauseActive = true;
                 pauseUntil = make_timeout_time_ms(pauseMs);
             }
         }
@@ -214,7 +209,9 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
             continue;
 
         bool pressed = isMaskPressed(button.pixel.mask, pressedMasks);
-        RGB gradientColor = columnColor(button.column, colorA, colorB);
+        RGB gradientColor = (pauseActive && getPauseMs(pause) > 0)
+            ? colorA
+            : columnColor(button.column, colorA, colorB);
         RGB resolved = gradientColor;
 
         if (pressed) {
@@ -235,10 +232,22 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     RGB leverNormal(animationOptions.gridLeverNormalColor);
     RGB leverPress(animationOptions.gridLeverPressColor);
-    RGB leverColor = isLeverDirectionPressed(pressedMasks) ? leverPress : leverNormal;
-    for (auto pos : leverPositions) {
-        if (pos < 100) {
-            frame[pos] = leverColor;
+
+    for (auto &entry : leverPositions) {
+        for (auto pos : entry.second) {
+            if (pos < 100) {
+                frame[pos] = leverNormal;
+            }
+        }
+    }
+
+    for (auto &entry : leverPositions) {
+        if (isMaskPressed(entry.first, pressedMasks)) {
+            for (auto pos : entry.second) {
+                if (pos < 100) {
+                    frame[pos] = leverPress;
+                }
+            }
         }
     }
 
