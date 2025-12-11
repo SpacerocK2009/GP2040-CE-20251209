@@ -139,6 +139,8 @@ LayoutManager::LayoutList LayoutManager::getLeftLayout(uint16_t index) {
             return draw6GAWDAllButtonLeft();
         case BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A:
             return draw6GAWDAllButtonPlusLeft();
+        case BUTTON_LAYOUT_STICK_11BUTTONS:
+            return drawArcadeStick();
         case BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A:
             return drawBoardDefinedAlt0A();
         case BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A:
@@ -247,6 +249,8 @@ LayoutManager::LayoutList LayoutManager::getRightLayout(uint16_t index) {
             return draw6GAWDAllButtonRight();
         case BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B:
             return draw6GAWDAllButtonPlusRight();
+        case BUTTON_LAYOUT_STICK_11BUTTONS_B:
+            return drawStick11ButtonsRight();
         case BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B:
             return this->drawBoardDefinedAlt0B();
         case BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B:
@@ -542,6 +546,11 @@ LayoutManager::LayoutList LayoutManager::drawStickless14A()
 LayoutManager::LayoutList LayoutManager::drawSticklessButtons14B()
 {
     return BUTTON_GROUP_STICKLESS_BUTTONS14B;
+}
+
+LayoutManager::LayoutList LayoutManager::drawStick11ButtonsRight()
+{
+    return BUTTON_GROUP_STICK_11BUTTONS_RIGHT;
 }
 
 LayoutManager::LayoutList LayoutManager::drawDancepadA()
