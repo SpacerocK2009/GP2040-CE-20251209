@@ -63,6 +63,7 @@ class LayoutManager {
         LayoutList drawStickless();
         LayoutList drawWasdBox();
         LayoutList drawArcadeStick();
+        LayoutList drawArcadeStick11Buttons();
         LayoutList drawUDLR();
         LayoutList drawMAMEA();
         LayoutList drawOpenCore0WASDA();
