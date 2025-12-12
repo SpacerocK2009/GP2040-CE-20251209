@@ -140,7 +140,7 @@ LayoutManager::LayoutList LayoutManager::getLeftLayout(uint16_t index) {
         case BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A:
             return draw6GAWDAllButtonPlusLeft();
         case BUTTON_LAYOUT_STICK_11BUTTONS:
-            return drawArcadeStick();
+            return drawArcadeStick11Buttons();
         case BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A:
             return drawBoardDefinedAlt0A();
         case BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A:
@@ -381,6 +381,11 @@ LayoutManager::LayoutList LayoutManager::drawUDLR()
 LayoutManager::LayoutList LayoutManager::drawArcadeStick()
 {
     return BUTTON_GROUP_ARCADE_STICK;
+}
+
+LayoutManager::LayoutList LayoutManager::drawArcadeStick11Buttons()
+{
+    return BUTTON_GROUP_ARCADE_STICK_11BUTTONS;
 }
 
 LayoutManager::LayoutList LayoutManager::drawVLXA()
