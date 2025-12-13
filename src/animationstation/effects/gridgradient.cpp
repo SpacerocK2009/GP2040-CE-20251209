@@ -6,6 +6,9 @@
 #include <map>
 #include <set>
 
+// Preset B uses the same 4-color horizontal gradient as Preset A over a 7x4 grid.
+// Gradient phase is based only on the X coordinate (left to right).
+// TouchPadCenter (A1) is included at grid position (3,0).
 namespace {
 struct GridLayoutPresetB {
     int x;
@@ -363,14 +366,14 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
             }
         }
     } else {
-        const float maxIndex = static_cast<float>(GRID_PRESET_B_WIDTH * GRID_PRESET_B_HEIGHT - 1);
+        const float maxIndex = static_cast<float>(GRID_PRESET_B_WIDTH - 1);
 
         for (auto &cell : presetBCells) {
             if (cell.indices.empty())
                 continue;
 
-            float basePos = static_cast<float>(cell.y * GRID_PRESET_B_WIDTH + cell.x) / maxIndex;
-            float cellPhase = std::fmod(globalPhase + basePos, 1.0f);
+            float normalizedX = std::clamp(static_cast<float>(cell.x) / maxIndex, 0.0f, 1.0f);
+            float cellPhase = std::fmod(globalPhase + normalizedX, 1.0f);
             RGB baseColor = columnColor(cellPhase, colorA, colorB, colorC, colorD);
 
             bool pressed = isMaskPressed(cell.mask, pressedMasks);
