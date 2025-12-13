@@ -389,6 +389,7 @@ message AnimationOptions
     optional uint32 gridGradientColorD = 60;
     optional uint32 gridButtonPressColor = 61;
     optional GridGradientSpeed gridGradientSpeed = 62;
+    optional uint32 gridGradientPreset = 71;
     optional uint32 gridLeverNormalColor = 63;
     optional uint32 gridLeverPressColor = 64;
     optional uint32 gridCaseNormalColor = 65;

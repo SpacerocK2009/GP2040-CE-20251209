@@ -77,6 +77,7 @@ const defaultValue = {
         gridGradientColorD: '#ffff00',
         gridButtonPressColor: '#ffffff',
         gridGradientSpeed: 1,
+        gridGradientPreset: 0,
         gridLeverNormalColor: '#202020',
         gridLeverPressColor: '#00ffff',
         gridCaseNormalColor: '#000000',
@@ -180,6 +181,11 @@ const schema = yup.object().shape({
         gridGradientColorD: yup.string().label('Grid Color D').validateColor(),
         gridButtonPressColor: yup.string().label('Grid Press Color').validateColor(),
         gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(2),
+        gridGradientPreset: yup
+                .number()
+                .label('Grid Layout Preset')
+                .min(0)
+                .max(1),
         gridLeverNormalColor: yup.string().label('Lever Color').validateColor(),
         gridLeverPressColor: yup.string().label('Lever Press Color').validateColor(),
         gridCaseNormalColor: yup.string().label('Case Color').validateColor(),
@@ -345,6 +351,7 @@ export default function LEDConfigPage() {
                         gridGradientColorC: hexToInt(values.gridGradientColorC || '#000000'),
                         gridGradientColorD: hexToInt(values.gridGradientColorD || '#000000'),
                         gridButtonPressColor: hexToInt(values.gridButtonPressColor || '#000000'),
+                        gridGradientPreset: parseInt(values.gridGradientPreset || 0),
                         gridLeverNormalColor: hexToInt(values.gridLeverNormalColor || '#000000'),
                         gridLeverPressColor: hexToInt(values.gridLeverPressColor || '#000000'),
                         gridCaseNormalColor: hexToInt(values.gridCaseNormalColor || '#000000'),
@@ -897,6 +904,24 @@ export default function LEDConfigPage() {
                                                                                         {o.label}
                                                                                 </option>
                                                                         ))}
+                                                                </FormSelect>
+                                                                <FormSelect
+                                                                        label={t('LedConfig:grid.preset-label')}
+                                                                        name="gridGradientPreset"
+                                                                        className="form-select-sm"
+                                                                        groupClassName="col-sm-2 mb-3"
+                                                                        value={values.gridGradientPreset}
+                                                                        error={errors.gridGradientPreset}
+                                                                        isInvalid={errors.gridGradientPreset}
+                                                                        onChange={(e) =>
+                                                                                setFieldValue(
+                                                                                        'gridGradientPreset',
+                                                                                        parseInt(e.target.value),
+                                                                                )
+                                                                        }
+                                                                >
+                                                                        <option value={0}>{t('LedConfig:grid.preset-a')}</option>
+                                                                        <option value={1}>{t('LedConfig:grid.preset-b')}</option>
                                                                 </FormSelect>
                                                         </Row>
                                                         <p>{t('LedConfig:grid.case-help-text')}</p>

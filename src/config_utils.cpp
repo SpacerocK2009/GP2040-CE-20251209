@@ -597,6 +597,7 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
     INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorD, GRID_GRADIENT_COLOR_D);
     INIT_UNSET_PROPERTY(config.animationOptions, gridButtonPressColor, GRID_GRADIENT_PRESS_COLOR);
     INIT_UNSET_PROPERTY(config.animationOptions, gridGradientSpeed, GRID_GRADIENT_SPEED);
+    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientPreset, GRID_GRADIENT_PRESET);
     INIT_UNSET_PROPERTY(config.animationOptions, gridLeverNormalColor, GRID_GRADIENT_LEVER_NORMAL);
     INIT_UNSET_PROPERTY(config.animationOptions, gridLeverPressColor, GRID_GRADIENT_LEVER_PRESS);
     INIT_UNSET_PROPERTY(config.animationOptions, gridCaseNormalColor, GRID_GRADIENT_CASE_NORMAL);
