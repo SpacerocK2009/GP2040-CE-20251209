@@ -8,7 +8,7 @@
 
 // Preset B uses the same 4-color horizontal gradient as Preset A over a 7x4 grid.
 // Gradient phase is based only on the X coordinate (left to right).
-// TouchPadCenter (A1) is included at grid position (3,0).
+// TouchPadCenter (A2) is included at grid position (3,0).
 namespace {
 struct GridLayoutPresetB {
     int x;
@@ -20,16 +20,16 @@ constexpr int GRID_PRESET_B_WIDTH = 7;
 constexpr int GRID_PRESET_B_HEIGHT = 4;
 
 const GridLayoutPresetB GRID_LAYOUT_PRESET_B[] = {
-    { 3, 0, GAMEPAD_MASK_A1 },
+    { 3, 0, GAMEPAD_MASK_A2 },
     { 1, 1, GAMEPAD_MASK_DU },
-    { 3, 1, GAMEPAD_MASK_B1 },
+    { 3, 1, GAMEPAD_MASK_B3 },
     { 4, 1, GAMEPAD_MASK_B4 },
     { 5, 1, GAMEPAD_MASK_R1 },
     { 6, 1, GAMEPAD_MASK_L1 },
     { 0, 2, GAMEPAD_MASK_DL },
     { 2, 2, GAMEPAD_MASK_DR },
-    { 3, 2, GAMEPAD_MASK_B2 },
-    { 4, 2, GAMEPAD_MASK_B3 },
+    { 3, 2, GAMEPAD_MASK_B1 },
+    { 4, 2, GAMEPAD_MASK_B2 },
     { 5, 2, GAMEPAD_MASK_R2 },
     { 6, 2, GAMEPAD_MASK_L2 },
     { 1, 3, GAMEPAD_MASK_DD },
