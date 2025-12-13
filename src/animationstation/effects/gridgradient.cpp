@@ -3,11 +3,42 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <set>
+
+namespace {
+struct GridLayoutPresetB {
+    int x;
+    int y;
+    uint32_t mask;
+};
+
+constexpr int GRID_PRESET_B_WIDTH = 7;
+constexpr int GRID_PRESET_B_HEIGHT = 4;
+
+const GridLayoutPresetB GRID_LAYOUT_PRESET_B[] = {
+    { 3, 0, GAMEPAD_MASK_A1 },
+    { 1, 1, GAMEPAD_MASK_DU },
+    { 3, 1, GAMEPAD_MASK_B1 },
+    { 4, 1, GAMEPAD_MASK_B4 },
+    { 5, 1, GAMEPAD_MASK_R1 },
+    { 6, 1, GAMEPAD_MASK_L1 },
+    { 0, 2, GAMEPAD_MASK_DL },
+    { 2, 2, GAMEPAD_MASK_DR },
+    { 3, 2, GAMEPAD_MASK_B2 },
+    { 4, 2, GAMEPAD_MASK_B3 },
+    { 5, 2, GAMEPAD_MASK_R2 },
+    { 6, 2, GAMEPAD_MASK_L2 },
+    { 1, 3, GAMEPAD_MASK_DD },
+    { 3, 3, GAMEPAD_MASK_L3 },
+    { 4, 3, GAMEPAD_MASK_R3 },
+};
+} // namespace
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
     setupButtons();
     setupLeverPositions();
+    setupPresetBCells();
 }
 
 void GridGradient::setupButtons() {
@@ -76,6 +107,33 @@ void GridGradient::setupLeverPositions() {
                 }
             }
         }
+    }
+}
+
+void GridGradient::setupPresetBCells() {
+    presetBCells.clear();
+
+    std::map<uint32_t, std::vector<uint8_t>> maskToPositions;
+
+    for (auto &row : matrix->pixels) {
+        for (auto &pixel : row) {
+            if (pixel.index == NO_PIXEL.index || pixel.positions.empty())
+                continue;
+
+            for (auto pos : pixel.positions) {
+                if (pos < 100) {
+                    maskToPositions[pixel.mask].push_back(pos);
+                }
+            }
+        }
+    }
+
+    for (auto &cell : GRID_LAYOUT_PRESET_B) {
+        auto it = maskToPositions.find(cell.mask);
+        if (it == maskToPositions.end())
+            continue;
+
+        presetBCells.push_back({ cell.x, cell.y, cell.mask, it->second });
     }
 }
 
@@ -213,6 +271,7 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
     const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
+    const uint8_t gridPreset = static_cast<uint8_t>(animationOptions.gridGradientPreset);
 
     UpdateTime();
 
@@ -241,64 +300,93 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
     nextRunTime = make_timeout_time_ms(interval);
 
-    // Determine per-column base colors
-    std::array<RGB, 4> columnColors = { colorA, colorA, colorA, colorA };
-    constexpr float phaseOffset = 1.0f / 4.0f;
-    for (size_t col = 0; col < columnColors.size(); col++) {
-        float columnPhase = std::fmod(globalPhase + static_cast<float>(col) * phaseOffset, 1.0f);
-        columnColors[col] = columnColor(columnPhase, colorA, colorB, colorC, colorD);
-    }
+    if (gridPreset == 0) {
+        // Determine per-column base colors
+        std::array<RGB, 4> columnColors = { colorA, colorA, colorA, colorA };
+        constexpr float phaseOffset = 1.0f / 4.0f;
+        for (size_t col = 0; col < columnColors.size(); col++) {
+            float columnPhase = std::fmod(globalPhase + static_cast<float>(col) * phaseOffset, 1.0f);
+            columnColors[col] = columnColor(columnPhase, colorA, colorB, colorC, colorD);
+        }
 
-    // Render base gradient per column
-    for (size_t col = 0; col < columnLeds.size(); col++) {
-        for (auto pos : columnLeds[col]) {
-            if (pos < 100) {
-                frame[pos] = columnColors[col];
+        // Render base gradient per column
+        for (size_t col = 0; col < columnLeds.size(); col++) {
+            for (auto pos : columnLeds[col]) {
+                if (pos < 100) {
+                    frame[pos] = columnColors[col];
+                }
             }
         }
-    }
 
-    // Apply press overlay per button pixel
-    for (auto &button : gridButtons) {
-        if (button.pixel.index == NO_PIXEL.index || button.pixel.positions.empty())
-            continue;
-
-        bool pressed = isMaskPressed(button.pixel.mask, pressedMasks);
-        RGB baseColor = columnColors[button.column];
-        RGB resolved = baseColor;
-
-        if (pressed) {
-            times[button.pixel.index] = coolDownTimeInMs;
-            hitColor[button.pixel.index] = pressColor;
-            resolved = pressColor;
-        } else {
-            DecrementFadeCounter(button.pixel.index);
-            resolved = BlendColor(hitColor[button.pixel.index], baseColor, times[button.pixel.index]);
-        }
-
-        for (auto pos : button.pixel.positions) {
-            if (pos < 100) {
-                frame[pos] = resolved;
-            }
-        }
-    }
-
-    RGB leverNormal(animationOptions.gridLeverNormalColor);
-    RGB leverPress(animationOptions.gridLeverPressColor);
-
-    for (auto &entry : leverPositions) {
-        bool pressed = isMaskPressed(entry.first, pressedMasks);
-        for (auto pos : entry.second) {
-            if (pos >= 100)
+        // Apply press overlay per button pixel
+        for (auto &button : gridButtons) {
+            if (button.pixel.index == NO_PIXEL.index || button.pixel.positions.empty())
                 continue;
 
+            bool pressed = isMaskPressed(button.pixel.mask, pressedMasks);
+            RGB baseColor = columnColors[button.column];
+            RGB resolved = baseColor;
+
             if (pressed) {
-                times[pos] = coolDownTimeInMs;
-                hitColor[pos] = leverPress;
-                frame[pos] = leverPress;
+                times[button.pixel.index] = coolDownTimeInMs;
+                hitColor[button.pixel.index] = pressColor;
+                resolved = pressColor;
             } else {
-                DecrementFadeCounter(pos);
-                frame[pos] = BlendColor(hitColor[pos], leverNormal, times[pos]);
+                DecrementFadeCounter(button.pixel.index);
+                resolved = BlendColor(hitColor[button.pixel.index], baseColor, times[button.pixel.index]);
+            }
+
+            for (auto pos : button.pixel.positions) {
+                if (pos < 100) {
+                    frame[pos] = resolved;
+                }
+            }
+        }
+
+        RGB leverNormal(animationOptions.gridLeverNormalColor);
+        RGB leverPress(animationOptions.gridLeverPressColor);
+
+        for (auto &entry : leverPositions) {
+            bool pressed = isMaskPressed(entry.first, pressedMasks);
+            for (auto pos : entry.second) {
+                if (pos >= 100)
+                    continue;
+
+                if (pressed) {
+                    times[pos] = coolDownTimeInMs;
+                    hitColor[pos] = leverPress;
+                    frame[pos] = leverPress;
+                } else {
+                    DecrementFadeCounter(pos);
+                    frame[pos] = BlendColor(hitColor[pos], leverNormal, times[pos]);
+                }
+            }
+        }
+    } else {
+        const float maxIndex = static_cast<float>(GRID_PRESET_B_WIDTH * GRID_PRESET_B_HEIGHT - 1);
+
+        for (auto &cell : presetBCells) {
+            if (cell.indices.empty())
+                continue;
+
+            float basePos = static_cast<float>(cell.y * GRID_PRESET_B_WIDTH + cell.x) / maxIndex;
+            float cellPhase = std::fmod(globalPhase + basePos, 1.0f);
+            RGB baseColor = columnColor(cellPhase, colorA, colorB, colorC, colorD);
+
+            bool pressed = isMaskPressed(cell.mask, pressedMasks);
+
+            for (auto pos : cell.indices) {
+                if (pos >= 100)
+                    continue;
+
+                if (pressed) {
+                    times[pos] = coolDownTimeInMs;
+                    hitColor[pos] = pressColor;
+                    frame[pos] = pressColor;
+                } else {
+                    DecrementFadeCounter(pos);
+                    frame[pos] = BlendColor(hitColor[pos], baseColor, times[pos]);
+                }
             }
         }
     }

@@ -24,14 +24,23 @@ private:
         uint8_t column;
     };
 
+    struct GridPresetCell {
+        int x;
+        int y;
+        uint32_t mask;
+        std::vector<uint8_t> indices;
+    };
+
     std::array<std::vector<uint16_t>, 4> columnLeds;
     std::vector<GridButton> gridButtons;
+    std::vector<GridPresetCell> presetBCells;
     std::map<uint32_t, std::vector<uint8_t>> leverPositions;
     absolute_time_t nextRunTime = nil_time;
     float globalPhase = 0.0f;
 
     void setupButtons();
     void setupLeverPositions();
+    void setupPresetBCells();
     GridGradientSpeed resolveSpeed(int32_t value) const;
     uint32_t getIntervalMs(GridGradientSpeed speed) const;
     uint32_t getColumnDurationMs(GridGradientSpeed speed) const;

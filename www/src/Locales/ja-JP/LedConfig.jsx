@@ -33,14 +33,43 @@ export default {
 	},
 	'pled-pin-label': 'PLED #{{pin}} GPIO 端子',
 	'pled-index-label': 'PLED #{{index}} インデックス',
-	'rgb-order': {
-		'header-text': 'RGB LED ボタン順序',
-		'sub-header-text':
-			'ここではどのボタンにRGB LEDが実装されているか及び制御基板からどの順序で配線されているかを設定できます。この設定は一部のLEDアニメーションや静的テーマの機能で利用されます。',
-		'sub-header1-text':
-			'アイテムをドラッグ＆ドロップで順序変更してRGB LEDの有効化と順序を設定してください。',
-		'available-header-text': '利用可能ボタン',
-		'assigned-header-text': '割当済みボタン',
-	},
-	'turn-off-when-suspended': 'サスペンド中はオフにする',
+        'rgb-order': {
+                'header-text': 'RGB LED ボタン順序',
+                'sub-header-text':
+                        'ここではどのボタンにRGB LEDが実装されているか及び制御基板からどの順序で配線されているかを設定できます。この設定は一部のLEDアニメーションや静的テーマの機能で利用されます。',
+                'sub-header1-text':
+                        'アイテムをドラッグ＆ドロップで順序変更してRGB LEDの有効化と順序を設定してください。',
+                'available-header-text': '利用可能ボタン',
+                'assigned-header-text': '割当済みボタン',
+        },
+        'turn-off-when-suspended': 'サスペンド中はオフにする',
+        grid: {
+                'header-text': 'グリッドグラデーションプリセット',
+                'sub-header-text':
+                        '内蔵のグリッドグラデーションアニメーションプリセットを設定します。これらの色とインデックスはコントローラーに保存され、通常のLEDアニメーションのホットキーで切り替えできます。',
+                'gradient-a': 'グラデーションカラーA',
+                'gradient-b': 'グラデーションカラーB',
+                'gradient-c': 'グラデーションカラーC',
+                'gradient-d': 'グラデーションカラーD',
+                'button-press': 'ボタン押下カラー',
+                'lever-normal': 'レバー通常カラー',
+                'lever-press': 'レバー押下カラー',
+                'case-normal': 'ケース通常カラー',
+                'case-press': 'ケースレバー押下カラー',
+                'speed-label': 'グラデーション速度',
+                'preset-label': 'グリッドレイアウトプリセット',
+                'preset-a': 'プリセットA: レバー別色＋11ボタンレイアウト',
+                'preset-b': 'プリセットB: レバーとボタンの7×4グリッド',
+                'speed-very-slow': 'とても遅い',
+                'speed-slow': '遅い',
+                'speed-normal': '普通',
+                'speed-fast': '速い',
+                'speed-very-fast': 'とても速い',
+                'case-help-text':
+                        'ケースLEDインデックスはケースRGB開始位置からのオフセットです。空欄の場合はその方向のLEDをスキップします。',
+                'case-up-label': '上方向のケースLED',
+                'case-down-label': '下方向のケースLED',
+                'case-right-label': '右方向のケースLED',
+                'case-left-label': '左方向のケースLED',
+        },
 };

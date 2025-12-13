@@ -855,6 +855,7 @@ std::string setLedOptions()
     readDoc(animationOptions.gridGradientColorD, doc, "gridGradientColorD");
     readDoc(animationOptions.gridButtonPressColor, doc, "gridButtonPressColor");
     readDoc(animationOptions.gridGradientSpeed, doc, "gridGradientSpeed");
+    readDoc(animationOptions.gridGradientPreset, doc, "gridGradientPreset");
     readDoc(animationOptions.gridLeverNormalColor, doc, "gridLeverNormalColor");
     readDoc(animationOptions.gridLeverPressColor, doc, "gridLeverPressColor");
     readDoc(animationOptions.gridCaseNormalColor, doc, "gridCaseNormalColor");
@@ -949,6 +950,7 @@ std::string getLedOptions()
     writeDoc(doc, "gridGradientColorD", ((RGB)animationOptions.gridGradientColorD).value(LED_FORMAT_RGB));
     writeDoc(doc, "gridButtonPressColor", ((RGB)animationOptions.gridButtonPressColor).value(LED_FORMAT_RGB));
     writeDoc(doc, "gridGradientSpeed", animationOptions.gridGradientSpeed);
+    writeDoc(doc, "gridGradientPreset", animationOptions.gridGradientPreset);
     writeDoc(doc, "gridLeverNormalColor", ((RGB)animationOptions.gridLeverNormalColor).value(LED_FORMAT_RGB));
     writeDoc(doc, "gridLeverPressColor", ((RGB)animationOptions.gridLeverPressColor).value(LED_FORMAT_RGB));
     writeDoc(doc, "gridCaseNormalColor", ((RGB)animationOptions.gridCaseNormalColor).value(LED_FORMAT_RGB));
