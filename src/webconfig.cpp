@@ -12,6 +12,7 @@
 #include "types.h"
 #include "version.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -855,6 +856,7 @@ std::string setLedOptions()
     readDoc(animationOptions.gridGradientColorD, doc, "gridGradientColorD");
     readDoc(animationOptions.gridButtonPressColor, doc, "gridButtonPressColor");
     readDoc(animationOptions.gridGradientSpeed, doc, "gridGradientSpeed");
+    animationOptions.gridGradientSpeed = std::clamp(animationOptions.gridGradientSpeed, 0, 4);
     readDoc(animationOptions.gridGradientPreset, doc, "gridGradientPreset");
     readDoc(animationOptions.gridLeverNormalColor, doc, "gridLeverNormalColor");
     readDoc(animationOptions.gridLeverPressColor, doc, "gridLeverPressColor");
