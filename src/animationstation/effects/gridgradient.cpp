@@ -36,6 +36,17 @@ const GridLayoutPresetB GRID_LAYOUT_PRESET_B[] = {
     { 3, 3, GAMEPAD_MASK_L3 },
     { 4, 3, GAMEPAD_MASK_R3 },
 };
+
+constexpr GridGradientSpeed GRID_GRADIENT_SPEED_BY_INDEX[] = {
+    GRID_GRADIENT_SPEED_VERY_SLOW,
+    GRID_GRADIENT_SPEED_SLOW,
+    GRID_GRADIENT_SPEED_NORMAL,
+    GRID_GRADIENT_SPEED_FAST,
+    GRID_GRADIENT_SPEED_VERY_FAST,
+};
+
+constexpr uint32_t GRID_GRADIENT_INTERVAL_MS[] = { 25, 20, 16, 30, 12 };
+constexpr uint32_t GRID_GRADIENT_COLUMN_DURATION_MS[] = { 1400, 1000, 750, 1800, 500 };
 } // namespace
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
@@ -141,44 +152,18 @@ void GridGradient::setupPresetBCells() {
 }
 
 GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
-    if (value < GRID_GRADIENT_SPEED_SLOW || value > GRID_GRADIENT_SPEED_VERY_FAST) {
-        return GRID_GRADIENT_SPEED_NORMAL;
-    }
-
-    return static_cast<GridGradientSpeed>(value);
+    const int32_t clamped = std::clamp(value, 0, 4);
+    return GRID_GRADIENT_SPEED_BY_INDEX[clamped];
 }
 
 uint32_t GridGradient::getIntervalMs(GridGradientSpeed speed) const {
-    // Render frequently for smooth interpolation; faster speeds tick slightly faster
-    switch (speed) {
-        case GRID_GRADIENT_SPEED_VERY_SLOW:
-            return 30;
-        case GRID_GRADIENT_SPEED_SLOW:
-            return 25;
-        case GRID_GRADIENT_SPEED_NORMAL:
-        default:
-            return 20;
-        case GRID_GRADIENT_SPEED_FAST:
-            return 16;
-        case GRID_GRADIENT_SPEED_VERY_FAST:
-            return 12;
-    }
+    const int32_t clamped = std::clamp(static_cast<int32_t>(speed), 0, 4);
+    return GRID_GRADIENT_INTERVAL_MS[clamped];
 }
 
 uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
-    switch (speed) {
-        case GRID_GRADIENT_SPEED_VERY_SLOW:
-            return 1800;
-        case GRID_GRADIENT_SPEED_SLOW:
-            return 1400;
-        case GRID_GRADIENT_SPEED_NORMAL:
-        default:
-            return 1000;
-        case GRID_GRADIENT_SPEED_FAST:
-            return 750;
-        case GRID_GRADIENT_SPEED_VERY_FAST:
-            return 500;
-    }
+    const int32_t clamped = std::clamp(static_cast<int32_t>(speed), 0, 4);
+    return GRID_GRADIENT_COLUMN_DURATION_MS[clamped];
 }
 
 bool GridGradient::isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const {
@@ -403,45 +388,12 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
 void GridGradient::ParameterUp() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
-    const GridGradientSpeed ordered[] = {
-        GRID_GRADIENT_SPEED_VERY_SLOW,
-        GRID_GRADIENT_SPEED_SLOW,
-        GRID_GRADIENT_SPEED_NORMAL,
-        GRID_GRADIENT_SPEED_FAST,
-        GRID_GRADIENT_SPEED_VERY_FAST,
-    };
-
-    size_t index = 0;
-    while (index < 5 && ordered[index] != speed) {
-        index++;
-    }
-
-    index = (index + 1) % 5;
-    animationOptions.gridGradientSpeed = ordered[index];
+    const int32_t current = std::clamp(animationOptions.gridGradientSpeed, 0, 4);
+    animationOptions.gridGradientSpeed = (current + 1) % 5;
 }
 
 void GridGradient::ParameterDown() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
-    const GridGradientSpeed ordered[] = {
-        GRID_GRADIENT_SPEED_VERY_SLOW,
-        GRID_GRADIENT_SPEED_SLOW,
-        GRID_GRADIENT_SPEED_NORMAL,
-        GRID_GRADIENT_SPEED_FAST,
-        GRID_GRADIENT_SPEED_VERY_FAST,
-    };
-
-    size_t index = 0;
-    while (index < 5 && ordered[index] != speed) {
-        index++;
-    }
-
-    if (index == 0) {
-        index = 4;
-    } else {
-        index--;
-    }
-
-    animationOptions.gridGradientSpeed = ordered[index];
+    const int32_t current = std::clamp(animationOptions.gridGradientSpeed, 0, 4);
+    animationOptions.gridGradientSpeed = current == 0 ? 4 : current - 1;
 }

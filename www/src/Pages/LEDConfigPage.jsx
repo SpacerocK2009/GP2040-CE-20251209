@@ -43,10 +43,10 @@ const CASE_TYPE = [
 ];
 
 const GRID_GRADIENT_SPEED = [
-        { value: 3, label: 'very-slow' },
-        { value: 0, label: 'slow' },
-        { value: 1, label: 'normal' },
-        { value: 2, label: 'fast' },
+        { value: 0, label: 'very-slow' },
+        { value: 1, label: 'slow' },
+        { value: 2, label: 'normal' },
+        { value: 3, label: 'fast' },
         { value: 4, label: 'very-fast' },
 ];
 
@@ -76,7 +76,7 @@ const defaultValue = {
         gridGradientColorC: '#00ffff',
         gridGradientColorD: '#ffff00',
         gridButtonPressColor: '#ffffff',
-        gridGradientSpeed: 1,
+        gridGradientSpeed: 2,
         gridGradientPreset: 0,
         gridLeverNormalColor: '#202020',
         gridLeverPressColor: '#00ffff',
@@ -180,7 +180,7 @@ const schema = yup.object().shape({
         gridGradientColorC: yup.string().label('Grid Color C').validateColor(),
         gridGradientColorD: yup.string().label('Grid Color D').validateColor(),
         gridButtonPressColor: yup.string().label('Grid Press Color').validateColor(),
-        gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(2),
+        gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(4),
         gridGradientPreset: yup
                 .number()
                 .label('Grid Layout Preset')
