@@ -856,7 +856,8 @@ std::string setLedOptions()
     readDoc(animationOptions.gridGradientColorD, doc, "gridGradientColorD");
     readDoc(animationOptions.gridButtonPressColor, doc, "gridButtonPressColor");
     readDoc(animationOptions.gridGradientSpeed, doc, "gridGradientSpeed");
-    animationOptions.gridGradientSpeed = std::clamp(animationOptions.gridGradientSpeed, 0, 4);
+    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>(
+        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4));
     readDoc(animationOptions.gridGradientPreset, doc, "gridGradientPreset");
     readDoc(animationOptions.gridLeverNormalColor, doc, "gridLeverNormalColor");
     readDoc(animationOptions.gridLeverPressColor, doc, "gridLeverPressColor");
