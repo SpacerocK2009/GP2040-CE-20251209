@@ -152,17 +152,17 @@ void GridGradient::setupPresetBCells() {
 }
 
 GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
-    const int32_t clamped = std::clamp(value, 0, 4);
+    const int32_t clamped = std::clamp<int32_t>(value, 0, 4);
     return GRID_GRADIENT_SPEED_BY_INDEX[clamped];
 }
 
 uint32_t GridGradient::getIntervalMs(GridGradientSpeed speed) const {
-    const int32_t clamped = std::clamp(static_cast<int32_t>(speed), 0, 4);
+    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 4);
     return GRID_GRADIENT_INTERVAL_MS[clamped];
 }
 
 uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
-    const int32_t clamped = std::clamp(static_cast<int32_t>(speed), 0, 4);
+    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 4);
     return GRID_GRADIENT_COLUMN_DURATION_MS[clamped];
 }
 
@@ -388,12 +388,15 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 
 void GridGradient::ParameterUp() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    const int32_t current = std::clamp(animationOptions.gridGradientSpeed, 0, 4);
-    animationOptions.gridGradientSpeed = (current + 1) % 5;
+    const int32_t current =
+        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4);
+    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>((current + 1) % 5);
 }
 
 void GridGradient::ParameterDown() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
-    const int32_t current = std::clamp(animationOptions.gridGradientSpeed, 0, 4);
-    animationOptions.gridGradientSpeed = current == 0 ? 4 : current - 1;
+    const int32_t current =
+        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4);
+    animationOptions.gridGradientSpeed =
+        static_cast<GridGradientSpeed>(current == 0 ? 4 : current - 1);
 }
