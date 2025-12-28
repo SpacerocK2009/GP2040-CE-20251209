@@ -1,0 +1,4 @@
+upstream_ref: upstream/main
+upstream_commit: 3381b38073185dfff9cd059e4a60d962d9ebd100
+custom_commit: 4bf608ffd41a5dd808882750eab3b9f34324c99d
+generated: 2025-12-28T19:23:12.4614456+09:00

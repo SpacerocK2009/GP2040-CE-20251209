@@ -1,0 +1,3195 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6c0770c0..dc1ec8e8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -299,6 +299,7 @@ src/animationstation/animationstation.cpp
+ src/animationstation/effects/chase.cpp
+ src/animationstation/effects/customtheme.cpp
+ src/animationstation/effects/customthemepressed.cpp
++src/animationstation/effects/gridgradient.cpp
+ src/animationstation/effects/rainbow.cpp
+ src/animationstation/effects/staticcolor.cpp
+ src/animationstation/effects/statictheme.cpp
+diff --git a/docs/P5General_OLED_notes.md b/docs/P5General_OLED_notes.md
+new file mode 100644
+index 00000000..7e81314a
+--- /dev/null
++++ b/docs/P5General_OLED_notes.md
+@@ -0,0 +1,35 @@
++# P5General OLED pacing notes
++
++## Overview
++This change reduces the time the PS5 P5General driver spends stalled by OLED I2C writes while keeping the display usable. Updates are now chunked into smaller page writes, P5General mode can select an explicit pacing level from the WebConfig UI, and idle stretches are auto-throttled so I2C traffic falls back after inputs settle.
++
++To prevent merge conflicts across related branches, the WebConfig guidance lives in one place with a short summary here and the detailed copy in the locale files. If you refresh those strings, mirror the intent in both languages so downstream cherry-picks stay clean.
++
++## Current state check
++- Configuration defaults remain stable: when no value is stored, WebConfig still seeds `p5GeneralOledMode` with the Medium (2) pacing.
++- The OLED pacing selector and safe-mode toggle do not affect other input modes; non-P5General paths retain the ~8 ms render cadence.
++- No additional blocking paths were found in the render loop—the pacing work stays on the display core and respects the busy/defer checks.
++
++## Scheduling
++- The display addon still runs on core1, but P5General mode now stretches the render interval and limits how many SSD1306 pages are flushed per cycle. This caps each I2C burst and spreads a full frame across multiple frames.
++- Page flushing restarts whenever the UI changes modes to avoid missing sections of a new screen.
++- `p5GeneralOledMode` levels now include idle pacing between state changes:
++  - `Safe` (0): legacy-friendly chunked refresh (2–4 pages every ~32 ms) with ~240 ms idle redraws.
++  - `Low` (1): ~120 ms minimum cadence with single-page writes and ~320 ms idle redraws.
++  - `Medium` (2, default): ~64 ms minimum cadence with 2-page writes and ~200 ms idle redraws.
++  - `High` (3): faster 32 ms minimum cadence with 4-page writes and ~120–180 ms idle redraws.
++- The legacy `p5GeneralOledSafeMode` flag still increases defer timing during authentication bursts.
++- WebConfig now shows concise per-level guidance in English and Japanese to clarify cadence and when to pick each mode.
++
++## I2C execution
++- SSD1306 writes are now page-scoped (`drawBuffer(..., pages)`) instead of a full 1 kB transfer. Each call programs one or more pages with addressing commands, then advances the rolling page cursor.
++- A reset hook is invoked when the display screen changes so partial paging starts from the top of the framebuffer.
++
++## TinyUSB/P5General interplay
++- By shortening each I2C transaction and lowering the refresh cadence in P5General, core0 USB scheduling is less likely to contend with long I2C bursts while authentication traffic is active.
++- Busy/authentication defer checks remain in place; safe-mode uses a longer busy defer to avoid overlapping with hash traffic.
++
++## Follow-up ideas
++- Consider exposing per-mode page counts in firmware for finer tuning per board.
++- Add runtime telemetry (max I2C burst time) to validate improvements on hardware.
++- If even lighter load is needed, allow an "event-only" OLED mode that triggers redraws solely on state changes.
+diff --git a/headers/addons/display.h b/headers/addons/display.h
+index d4ef36d9..eb9352e9 100644
+--- a/headers/addons/display.h
++++ b/headers/addons/display.h
+@@ -15,12 +15,14 @@
+ #include "GPGFX_UI_types.h"
+ #include "GPGFX_UI_screens.h"
+ #include "GPGFX_UI_widgets.h"
++#include "drivers/p5general/P5GeneralDriver.h"
+ #include "gpaddon.h"
+ #include "gamepad.h"
+ #include "storagemanager.h"
+ #include "peripheralmanager.h"
+ #include "peripheral_i2c.h"
+ #include "peripheral_spi.h"
++#include "pico/time.h"
+ 
+ #ifndef HAS_I2C_DISPLAY
+ #define HAS_I2C_DISPLAY 0
+@@ -226,6 +228,18 @@ private:
+     GamepadButtonMapping *mapMenuToggle;
+     GamepadButtonMapping *mapMenuSelect;
+     std::string errorMessage;
++    absolute_time_t nextRenderTime;
++    uint32_t renderIntervalUs = 16000;
++    uint8_t renderPageLimit = 0;
++    uint32_t busyDeferUs = 4000;
++    uint32_t idleRenderIntervalUs = 16000;
++    absolute_time_t nextIdleRenderTime;
++    GamepadState lastGamepadState = {};
++    bool disableWhenP5General = false;
++    bool p5GeneralOledSafeMode = true;
++    uint8_t p5GeneralOledMode = 0;
++    P5GeneralDriver* p5GeneralDriver = nullptr;
++    bool isP5GeneralMode = false;
+ };
+ 
+ #endif
+diff --git a/headers/addons/neopicoleds.h b/headers/addons/neopicoleds.h
+index 616fcefe..5f741586 100644
+--- a/headers/addons/neopicoleds.h
++++ b/headers/addons/neopicoleds.h
+@@ -60,6 +60,50 @@
+ #define LEDS_THEME_INDEX 0
+ #endif
+ 
++#ifndef GRID_GRADIENT_COLOR_A
++#define GRID_GRADIENT_COLOR_A 0x0000FF
++#endif
++
++#ifndef GRID_GRADIENT_COLOR_B
++#define GRID_GRADIENT_COLOR_B 0xFF00FF
++#endif
++
++#ifndef GRID_GRADIENT_COLOR_C
++#define GRID_GRADIENT_COLOR_C 0x00FFFF
++#endif
++
++#ifndef GRID_GRADIENT_COLOR_D
++#define GRID_GRADIENT_COLOR_D 0xFFFF00
++#endif
++
++#ifndef GRID_GRADIENT_PRESS_COLOR
++#define GRID_GRADIENT_PRESS_COLOR 0xFFFFFF
++#endif
++
++#ifndef GRID_GRADIENT_SPEED
++#define GRID_GRADIENT_SPEED 2
++#endif
++
++#ifndef GRID_GRADIENT_PRESET
++#define GRID_GRADIENT_PRESET 0
++#endif
++
++#ifndef GRID_GRADIENT_LEVER_NORMAL
++#define GRID_GRADIENT_LEVER_NORMAL 0x202020
++#endif
++
++#ifndef GRID_GRADIENT_LEVER_PRESS
++#define GRID_GRADIENT_LEVER_PRESS 0x00FFFF
++#endif
++
++#ifndef GRID_GRADIENT_CASE_NORMAL
++#define GRID_GRADIENT_CASE_NORMAL 0x000000
++#endif
++
++#ifndef GRID_GRADIENT_CASE_PRESS
++#define GRID_GRADIENT_CASE_PRESS 0xFF8000
++#endif
++
+ #ifndef LEDS_RAINBOW_CYCLE_TIME
+ #define LEDS_RAINBOW_CYCLE_TIME 40
+ #endif
+diff --git a/headers/animationstation/animationstation.h b/headers/animationstation/animationstation.h
+index 4eb7d69a..9767ca58 100644
+--- a/headers/animationstation/animationstation.h
++++ b/headers/animationstation/animationstation.h
+@@ -13,6 +13,8 @@
+ #include "effects/chase.h"
+ #include "effects/customtheme.h"
+ #include "effects/customthemepressed.h"
++#include "effects/gridgradient.h"
++#include "effects/noanimation.h"
+ #include "effects/rainbow.h"
+ #include "effects/staticcolor.h"
+ #include "effects/statictheme.h"
+@@ -20,7 +22,7 @@
+ #include "config.pb.h"
+ #include "enums.pb.h"
+ 
+-const int TOTAL_EFFECTS = 4; // Exclude custom theme until verified present
++const int TOTAL_EFFECTS = static_cast<int>(AnimationEffects::EFFECT_GRID_GRADIENT) + 1;
+ 
+ class AnimationStation
+ {
+@@ -72,6 +74,8 @@ private:
+     uint8_t brightnessSteps;
+     float brightnessX;
+     PixelMatrix matrix;
++
++    bool isEffectAvailable(AnimationEffects effect);
+ };
+ 
+ #endif
+diff --git a/headers/animationstation/effects/gridgradient.h b/headers/animationstation/effects/gridgradient.h
+new file mode 100644
+index 00000000..49117989
+--- /dev/null
++++ b/headers/animationstation/effects/gridgradient.h
+@@ -0,0 +1,53 @@
++#ifndef _GRIDGRADIENT_H_
++#define _GRIDGRADIENT_H_
++
++#include "animation.h"
++#include "enums.pb.h"
++#include "pixel.h"
++#include "pb.h"
++
++#include <array>
++#include <map>
++#include <set>
++#include <vector>
++
++class GridGradient : public Animation {
++public:
++    explicit GridGradient(PixelMatrix &matrix);
++    bool Animate(RGB (&frame)[100]) override;
++    void ParameterUp() override;
++    void ParameterDown() override;
++
++private:
++    struct GridButton {
++        Pixel pixel;
++        uint8_t column;
++    };
++
++    struct GridPresetCell {
++        int x;
++        int y;
++        uint32_t mask;
++        std::vector<uint8_t> indices;
++    };
++
++    std::array<std::vector<uint16_t>, 4> columnLeds;
++    std::vector<GridButton> gridButtons;
++    std::vector<GridPresetCell> presetBCells;
++    std::map<uint32_t, std::vector<uint8_t>> leverPositions;
++    absolute_time_t nextRunTime = nil_time;
++    float globalPhase = 0.0f;
++
++    void setupButtons();
++    void setupLeverPositions();
++    void setupPresetBCells();
++    GridGradientSpeed resolveSpeed(int32_t value) const;
++    uint32_t getIntervalMs(GridGradientSpeed speed) const;
++    uint32_t getColumnDurationMs(GridGradientSpeed speed) const;
++    bool isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const;
++    RGB interpolate(const RGB &from, const RGB &to, float t) const;
++    RGB columnColor(float t, const RGB &colorA, const RGB &colorB, const RGB &colorC, const RGB &colorD) const;
++    void renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress);
++};
++
++#endif
+diff --git a/headers/animationstation/effects/noanimation.h b/headers/animationstation/effects/noanimation.h
+new file mode 100644
+index 00000000..8be77e9c
+--- /dev/null
++++ b/headers/animationstation/effects/noanimation.h
+@@ -0,0 +1,14 @@
++#ifndef _NOANIMATION_H_
++#define _NOANIMATION_H_
++
++#include "animation.h"
++
++class NoAnimation : public Animation {
++public:
++    explicit NoAnimation(PixelMatrix &matrix) : Animation(matrix) {}
++    bool Animate(RGB (&frame)[100]) override { return true; }
++    void ParameterUp() override {}
++    void ParameterDown() override {}
++};
++
++#endif
+diff --git a/headers/buttonlayouts.h b/headers/buttonlayouts.h
+index f13ede33..6a2f1c79 100644
+--- a/headers/buttonlayouts.h
++++ b/headers/buttonlayouts.h
+@@ -5,6 +5,7 @@
+ #include "enums.pb.h"
+ 
+ #define BUTTON_GROUP_ARCADE_STICK              {{GP_ELEMENT_LEVER,  { 17, 37, 10, 10, 1, 0, 0}}}
++#define BUTTON_GROUP_ARCADE_STICK_11BUTTONS    {{GP_ELEMENT_LEVER,  { 32, 37, 10, 10, 1, 0, 0}}}
+ #define BUTTON_GROUP_VLXA                      {{GP_ELEMENT_LEVER,  { 15, 36,  8,  8, 1, 0, 0}}}
+ #define BUTTON_GROUP_FIGHTBOARD_STICK          {{GP_ELEMENT_LEVER,  { 27, 31, 10, 10, 1, 0, 0}}}
+ #define BUTTON_GROUP_FIGHTBOARD_STICK_MIRRORED {{GP_ELEMENT_LEVER,  { 99, 31, 10, 10, 1, 0, 0}}}
+@@ -300,6 +301,24 @@
+     {GP_ELEMENT_BTN_BUTTON, {89, 37, 4, 4, 1, 1, GAMEPAD_MASK_L2,     GP_SHAPE_ELLIPSE}}\
+ }
+ 
++#define BUTTON_GROUP_STICK_11BUTTONS_RIGHT {\
++    {GP_ELEMENT_BTN_BUTTON, {70, 16, 5, 5, 1, 1, GAMEPAD_MASK_A2,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {70, 29, 5, 5, 1, 1, GAMEPAD_MASK_B3,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {82, 29, 5, 5, 1, 1, GAMEPAD_MASK_B4,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {94, 29, 5, 5, 1, 1, GAMEPAD_MASK_R1,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {106,29, 5, 5, 1, 1, GAMEPAD_MASK_L1,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {70, 42, 5, 5, 1, 1, GAMEPAD_MASK_B1,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {82, 42, 5, 5, 1, 1, GAMEPAD_MASK_B2,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {94, 42, 5, 5, 1, 1, GAMEPAD_MASK_R2,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {106,42, 5, 5, 1, 1, GAMEPAD_MASK_L2,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {70, 55, 5, 5, 1, 1, GAMEPAD_MASK_L3,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {82, 55, 5, 5, 1, 1, GAMEPAD_MASK_R3,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {77, 15, 2, 2, 1, 1, GAMEPAD_MASK_A2,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {82, 15, 2, 2, 1, 1, GAMEPAD_MASK_A1,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {87, 15, 2, 2, 1, 1, GAMEPAD_MASK_S1,    GP_SHAPE_ELLIPSE}},\
++    {GP_ELEMENT_BTN_BUTTON, {92, 15, 2, 2, 1, 1, GAMEPAD_MASK_S2,    GP_SHAPE_ELLIPSE}}\
++}
++
+ #define BUTTON_GROUP_STICKLESSR16A {\
+     {GP_ELEMENT_DIR_BUTTON, {47, 19,  4,  4, 1, 1, GAMEPAD_MASK_UP,    GP_SHAPE_ELLIPSE}},\
+     {GP_ELEMENT_DIR_BUTTON, {32, 27,  4,  4, 1, 1, GAMEPAD_MASK_LEFT,  GP_SHAPE_ELLIPSE}},\
+diff --git a/headers/display/GPGFX.h b/headers/display/GPGFX.h
+index cdc0c275..e6521bb5 100644
+--- a/headers/display/GPGFX.h
++++ b/headers/display/GPGFX.h
+@@ -18,7 +18,8 @@ class GPGFX {
+ 
+         // drawing methods
+         void clearScreen();
+-        void render();
++        void render(uint8_t pages = 0);
++        void resetPartialState() { this->displayDriver->resetPartialState(); }
+ 
+         uint32_t getPixel(uint16_t x, uint16_t y);
+         void drawPixel(uint16_t x, uint16_t y, uint32_t color);
+diff --git a/headers/display/ui/elements/GPScreen.h b/headers/display/ui/elements/GPScreen.h
+index 171f863a..6a376482 100644
+--- a/headers/display/ui/elements/GPScreen.h
++++ b/headers/display/ui/elements/GPScreen.h
+@@ -9,7 +9,7 @@ class GPScreen : public GPWidget {
+     public:
+         GPScreen(){}
+         virtual ~GPScreen() {}
+-        void draw();
++        void draw(uint8_t pageLimit = 0);
+         virtual int8_t update() = 0;
+         void clear();
+         virtual void init() = 0;
+diff --git a/headers/drivers/p5general/P5GeneralDriver.h b/headers/drivers/p5general/P5GeneralDriver.h
+index bcfa682c..e74d7547 100644
+--- a/headers/drivers/p5general/P5GeneralDriver.h
++++ b/headers/drivers/p5general/P5GeneralDriver.h
+@@ -35,6 +35,8 @@ public:
+     virtual uint16_t GetJoystickMidValue();
+     virtual USBListener * get_usb_auth_listener();
+     bool getAuthSent() { return false;}
++    bool isAuthBusy();
++    bool shouldDeferIO();
+     bool getDongleAuthRequired();
+ private:
+     P5GenerorReport p5GeneralReport;
+diff --git a/headers/interfaces/i2c/displaybase.h b/headers/interfaces/i2c/displaybase.h
+index 3e076c50..32db8dbe 100644
+--- a/headers/interfaces/i2c/displaybase.h
++++ b/headers/interfaces/i2c/displaybase.h
+@@ -39,6 +39,8 @@ class GPGFX_DisplayBase : public I2CDeviceBase {
+         virtual void drawSprite(uint8_t* spriteData, uint16_t width, uint16_t height, uint16_t pitch, uint16_t x, uint16_t y, uint8_t priority, double scale) {}
+ 
+         virtual void drawBuffer(uint8_t *pBuffer) {}
++        virtual void drawBuffer(uint8_t *pBuffer, uint8_t pages) { drawBuffer(pBuffer); }
++        virtual void resetPartialState() {}
+ 
+         void setMetrics(GPGFX_DisplayMetrics* metrics) { this->_metrics = metrics; }
+         GPGFX_DisplayMetrics* getMetrics() { return this->_metrics; }
+diff --git a/headers/interfaces/i2c/ssd1306/tiny_ssd1306.h b/headers/interfaces/i2c/ssd1306/tiny_ssd1306.h
+index 254103f4..bfa63d2b 100644
+--- a/headers/interfaces/i2c/ssd1306/tiny_ssd1306.h
++++ b/headers/interfaces/i2c/ssd1306/tiny_ssd1306.h
+@@ -37,6 +37,8 @@ class GPGFX_TinySSD1306 : public GPGFX_DisplayBase {
+         void drawSprite(uint8_t* spriteData, uint16_t width, uint16_t height, uint16_t pitch, uint16_t x, uint16_t y, uint8_t priority, double scale = 1.0);
+ 
+         void drawBuffer(uint8_t *pBuffer);
++        void drawBuffer(uint8_t *pBuffer, uint8_t pages);
++        void resetPartialState() override { framePage = 0; }
+ 
+         bool isSH1106(int detectedDisplay);
+ 
+diff --git a/headers/layoutmanager.h b/headers/layoutmanager.h
+index 427f71a5..e3c5453c 100644
+--- a/headers/layoutmanager.h
++++ b/headers/layoutmanager.h
+@@ -63,6 +63,7 @@ class LayoutManager {
+         LayoutList drawStickless();
+         LayoutList drawWasdBox();
+         LayoutList drawArcadeStick();
++        LayoutList drawArcadeStick11Buttons();
+         LayoutList drawUDLR();
+         LayoutList drawMAMEA();
+         LayoutList drawOpenCore0WASDA();
+@@ -101,6 +102,7 @@ class LayoutManager {
+         LayoutList drawSticklessButtonsR16B();
+         LayoutList drawStickless14A();
+         LayoutList drawSticklessButtons14B();
++        LayoutList drawStick11ButtonsRight();
+         LayoutList drawButtonLayoutLeft();
+         LayoutList drawButtonLayoutRight();
+         LayoutList drawBoardDefinedA();
+diff --git a/proto/config.proto b/proto/config.proto
+index a2e7dcaf..87781e5f 100644
+--- a/proto/config.proto
++++ b/proto/config.proto
+@@ -269,6 +269,9 @@ message DisplayOptions
+     optional uint32 inputHistoryLength = 28;
+     optional uint32 inputHistoryCol = 29;
+     optional uint32 inputHistoryRow = 30;
++    optional bool disableWhenP5General = 31;
++    optional bool p5GeneralOledSafeMode = 32;
++    optional int32 p5GeneralOledMode = 33;
+ }
+ 
+ message LEDOptions
+@@ -379,6 +382,23 @@ message AnimationOptions
+     optional float alStaticBrightnessCustomThemeX = 54;     // static custom theme brightness
+     optional uint32 alCustomStaticThemeIndex = 55;          // custom theme index
+     optional uint32 alCustomStaticColorIndex = 56;          // static color index
++
++    optional uint32 gridGradientColorA = 57;
++    optional uint32 gridGradientColorB = 58;
++    optional uint32 gridGradientColorC = 59;
++    optional uint32 gridGradientColorD = 60;
++    optional uint32 gridButtonPressColor = 61;
++    optional GridGradientSpeed gridGradientSpeed = 62;
++    optional uint32 gridGradientPreset = 71;
++    optional uint32 gridLeverNormalColor = 63;
++    optional uint32 gridLeverPressColor = 64;
++    optional uint32 gridCaseNormalColor = 65;
++    optional uint32 gridCaseLeverPressColor = 66;
++    // Case LED indices are offsets relative to caseRGBIndex and are clamped at runtime.
++    repeated int32 gridCaseUpIndices = 67 [(nanopb).max_count = 4];
++    repeated int32 gridCaseDownIndices = 68 [(nanopb).max_count = 4];
++    repeated int32 gridCaseRightIndices = 69 [(nanopb).max_count = 4];
++    repeated int32 gridCaseLeftIndices = 70 [(nanopb).max_count = 4];
+ }
+ 
+ message BootselButtonOptions
+diff --git a/proto/enums.proto b/proto/enums.proto
+index 42edc7fc..92def675 100644
+--- a/proto/enums.proto
++++ b/proto/enums.proto
+@@ -48,6 +48,7 @@ enum ButtonLayout
+     BUTTON_LAYOUT_BOARD_DEFINED_ALT5_A = 39;
+     BUTTON_LAYOUT_BOARD_DEFINED_ALT6_A = 40;
+     BUTTON_LAYOUT_BOARD_DEFINED_ALT7_A = 41;
++    BUTTON_LAYOUT_STICK_11BUTTONS = 42;
+ }
+ 
+ enum ButtonLayoutRight
+@@ -102,6 +103,7 @@ enum ButtonLayoutRight
+     BUTTON_LAYOUT_BOARD_DEFINED_ALT5_B = 45;
+     BUTTON_LAYOUT_BOARD_DEFINED_ALT6_B = 46;
+     BUTTON_LAYOUT_BOARD_DEFINED_ALT7_B = 47;
++    BUTTON_LAYOUT_STICK_11BUTTONS_B = 48;
+ }
+ 
+ enum SplashMode
+@@ -464,6 +466,18 @@ enum AnimationEffects
+     EFFECT_CHASE = 2;
+     EFFECT_STATIC_THEME = 3;
+     EFFECT_CUSTOM_THEME = 4;
++    EFFECT_GRID_GRADIENT = 5;
++}
++
++enum GridGradientSpeed
++{
++    option (nanopb_enumopt).long_names = false;
++
++    GRID_GRADIENT_SPEED_SLOW = 0;
++    GRID_GRADIENT_SPEED_NORMAL = 1;
++    GRID_GRADIENT_SPEED_FAST = 2;
++    GRID_GRADIENT_SPEED_VERY_SLOW = 3;
++    GRID_GRADIENT_SPEED_VERY_FAST = 4;
+ }
+ 
+ // This has to be kept in sync with LEDFormat in NeoPico.h
+diff --git a/src/addons/display.cpp b/src/addons/display.cpp
+index c553e2a4..85b85dc7 100644
+--- a/src/addons/display.cpp
++++ b/src/addons/display.cpp
+@@ -8,6 +8,7 @@
+ #include "enums.h"
+ #include "storagemanager.h"
+ #include "pico/stdlib.h"
++#include <cstring>
+ 
+ #include "drivermanager.h"
+ #include "usbdriver.h"
+@@ -19,11 +20,21 @@ bool DisplayAddon::available() {
+     const DisplayOptions& options = Storage::getInstance().getDisplayOptions();
+     bool result = false;
+ 
++    isP5GeneralMode = (DriverManager::getInstance().getInputMode() == INPUT_MODE_P5GENERAL);
++    if (isP5GeneralMode) {
++        p5GeneralDriver = static_cast<P5GeneralDriver*>(DriverManager::getInstance().getDriver());
++    } else {
++        p5GeneralDriver = nullptr;
++    }
++    disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
++    p5GeneralOledSafeMode = options.p5GeneralOledSafeMode;
++    p5GeneralOledMode = options.p5GeneralOledMode;
++
+     // create the gfx interface
+     gpDisplay = new GPGFX();
+     gpOptions = gpDisplay->getAvailableDisplay(GPGFX_DisplayType::DISPLAY_TYPE_NONE);
+     if ( gpOptions.displayType != GPGFX_DisplayType::DISPLAY_TYPE_NONE ) {
+-        if ( options.enabled ) {
++        if ( options.enabled && !disableWhenP5General ) {
+             result = true;
+         } else {
+             // Power off our display if its available but disabled in config
+@@ -36,10 +47,12 @@ bool DisplayAddon::available() {
+             gpDisplay->init(gpOptions);
+             setDisplayPower(0);
+             delete gpDisplay;
++            gpDisplay = nullptr;
+             result = false;
+         }
+     } else { // No display, delete our GPGFX
+         delete gpDisplay;
++        gpDisplay = nullptr;
+     }
+     return result;
+ }
+@@ -67,8 +80,46 @@ void DisplayAddon::setup() {
+     configMode = DriverManager::getInstance().isConfigMode();
+     turnOffWhenSuspended = options.turnOffWhenSuspended;
+     displaySaverMode = options.displaySaverMode;
++    busyDeferUs = 4000;
++    renderPageLimit = 0;
++    idleRenderIntervalUs = 32000;
++    if (isP5GeneralMode) {
++        switch (p5GeneralOledMode) {
++            case 0: // Safe (chunked, legacy behaviour)
++                renderIntervalUs = p5GeneralOledSafeMode ? 32000 : 16000;
++                idleRenderIntervalUs = 240000;
++                renderPageLimit = p5GeneralOledSafeMode ? 2 : 4;
++                busyDeferUs = 12000;
++                break;
++            case 1: // Low
++                renderIntervalUs = 120000;
++                idleRenderIntervalUs = 320000;
++                renderPageLimit = 1;
++                busyDeferUs = 16000;
++                break;
++            case 2: // Medium (default)
++                renderIntervalUs = 64000;
++                idleRenderIntervalUs = 200000;
++                renderPageLimit = 2;
++                busyDeferUs = 14000;
++                break;
++            default: // High
++                renderIntervalUs = 32000;
++                idleRenderIntervalUs = p5GeneralOledSafeMode ? 180000 : 120000;
++                renderPageLimit = 4;
++                busyDeferUs = p5GeneralOledSafeMode ? 12000 : 8000;
++                break;
++        }
++    } else {
++        renderIntervalUs = 8000;
++        idleRenderIntervalUs = 32000;
++    }
++    nextRenderTime = make_timeout_time_us(renderIntervalUs);
++    nextIdleRenderTime = make_timeout_time_us(idleRenderIntervalUs);
+ 
+     prevValues = Storage::getInstance().GetGamepad()->debouncedGpio;
++    memset(&lastGamepadState, 0, sizeof(lastGamepadState));
++    prevMillis = getMillis();
+ 
+     // set current display mode
+     if (!configMode) {
+@@ -133,6 +184,7 @@ bool DisplayAddon::updateDisplayScreen() {
+         return false;
+ 
+     gpScreen->init();
++    gpDisplay->resetPartialState();
+     prevDisplayMode = currDisplayMode;
+     nextDisplayMode = currDisplayMode;
+     return true;
+@@ -203,6 +255,37 @@ void DisplayAddon::process() {
+         return;
+     }
+ 
++    absolute_time_t now = get_absolute_time();
++    Gamepad * gamepad = Storage::getInstance().GetGamepad();
++    bool inputChanged = false;
++
++    if (isP5GeneralMode) {
++        inputChanged = memcmp(&lastGamepadState, &gamepad->state, sizeof(GamepadState)) != 0;
++        if (inputChanged) {
++            lastGamepadState = gamepad->state;
++            if (!time_reached(nextRenderTime)) {
++                nextRenderTime = now;
++            }
++        }
++    }
++
++    if (!time_reached(nextRenderTime) && !(isP5GeneralMode && time_reached(nextIdleRenderTime)) && nextDisplayMode == currDisplayMode) {
++        return;
++    }
++    if (p5GeneralDriver != nullptr) {
++        if (p5GeneralDriver->shouldDeferIO()) {
++            nextRenderTime = delayed_by_us(now, busyDeferUs);
++            nextIdleRenderTime = delayed_by_us(now, idleRenderIntervalUs);
++            return;
++        }
++
++        if (p5GeneralOledSafeMode && p5GeneralDriver->isAuthBusy()) {
++            nextRenderTime = delayed_by_us(now, busyDeferUs);
++            nextIdleRenderTime = delayed_by_us(now, idleRenderIntervalUs);
++            return;
++        }
++    }
++
+     // Core0 requested a new display mode
+     if (nextDisplayMode != currDisplayMode ) {
+         currDisplayMode = nextDisplayMode;
+@@ -210,7 +293,7 @@ void DisplayAddon::process() {
+     }
+ 
+     int8_t screenReturn = gpScreen->update();
+-    gpScreen->draw();
++    gpScreen->draw(renderPageLimit);
+ 
+     if (!configMode && screenReturn < 0) {
+         Mask_t values = Storage::getInstance().GetGamepad()->debouncedGpio;
+@@ -232,6 +315,9 @@ void DisplayAddon::process() {
+             updateDisplayScreen();
+         }
+     }
++
++    nextRenderTime = delayed_by_us(now, renderIntervalUs);
++    nextIdleRenderTime = delayed_by_us(now, idleRenderIntervalUs);
+ }
+ 
+ const DisplayOptions& DisplayAddon::getDisplayOptions() {
+diff --git a/src/addons/neopicoleds.cpp b/src/addons/neopicoleds.cpp
+index 1b7b68e5..154a1d4d 100644
+--- a/src/addons/neopicoleds.cpp
++++ b/src/addons/neopicoleds.cpp
+@@ -508,6 +508,8 @@ void NeoPicoLEDAddon::process() {
+     if (!isValidPin(ledOptions.dataPin) || !time_reached(this->nextRunTime))
+         return;
+ 
++    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
++
+     // Get turbo options (turbo RGB led)
+     const TurboOptions& turboOptions = Storage::getInstance().getAddonOptions().turboOptions;
+     Gamepad * gamepad = Storage::getInstance().GetProcessedGamepad();
+@@ -602,15 +604,17 @@ void NeoPicoLEDAddon::process() {
+     }
+ 
+     // Case RGB LEDs for a single static color go here
+-	if ( ledOptions.caseRGBIndex >= 0 &&
+-		ledOptions.caseRGBCount > 0 ) {
+-		ambientHotkeys(gamepad);
+-		if ( ledOptions.caseRGBType == CASE_RGB_TYPE_AMBIENT ) {
+-			this->ambientLightCustom();
+-		} else if ( ledOptions.caseRGBType == CASE_RGB_TYPE_LINKED ) {
+-			this->ambientLightLinkage(); //Custom mode
+-		}
+-	}
++    if ( ledOptions.caseRGBIndex >= 0 &&
++            ledOptions.caseRGBCount > 0 ) {
++            if (static_cast<AnimationEffects>(animationOptions.baseAnimationIndex) != AnimationEffects::EFFECT_GRID_GRADIENT) {
++                    ambientHotkeys(gamepad);
++                    if ( ledOptions.caseRGBType == CASE_RGB_TYPE_AMBIENT ) {
++                            this->ambientLightCustom();
++                    } else if ( ledOptions.caseRGBType == CASE_RGB_TYPE_LINKED ) {
++                            this->ambientLightLinkage(); //Custom mode
++                    }
++            }
++    }
+ 
+     neopico.SetFrame(frame);
+     neopico.Show();
+diff --git a/src/animationstation/animationstation.cpp b/src/animationstation/animationstation.cpp
+index c87cf2d8..d19665d9 100644
+--- a/src/animationstation/animationstation.cpp
++++ b/src/animationstation/animationstation.cpp
+@@ -17,10 +17,6 @@ AnimationStation::AnimationStation() {
+     linkageModeOfBrightnessX = 0;
+     nextChange = nil_time;
+     effectCount = TOTAL_EFFECTS;
+-    AnimationOptions & animationOptions = Storage::getInstance().getAnimationOptions();
+-    if (animationOptions.hasCustomTheme) {
+-        effectCount++; // increase our effect count
+-    }
+ }
+ 
+ void AnimationStation::ConfigureBrightness(uint8_t max, uint8_t steps) {
+@@ -100,18 +96,20 @@ void AnimationStation::ChangeAnimation(int changeSize) {
+ 
+ uint16_t AnimationStation::AdjustIndex(int changeSize) {
+   AnimationOptions & animationOptions = Storage::getInstance().getAnimationOptions();
++  int newIndex = animationOptions.baseAnimationIndex;
++  int maxIndex = effectCount - 1;
+ 
+-  int newIndex = animationOptions.baseAnimationIndex + changeSize;
+-
+-  if (newIndex >= effectCount) {
+-    return 0;
+-  }
++  do {
++    newIndex += changeSize;
+ 
+-  if (newIndex < 0) {
+-    return (effectCount - 1);
+-  }
++    if (newIndex > maxIndex) {
++      newIndex = 0;
++    } else if (newIndex < 0) {
++      newIndex = maxIndex;
++    }
++  } while (!isEffectAvailable(static_cast<AnimationEffects>(newIndex)));
+ 
+-  return (uint16_t)newIndex;
++  return static_cast<uint16_t>(newIndex);
+ }
+ 
+ void AnimationStation::HandlePressed(std::vector<Pixel> pressed) {
+@@ -171,6 +169,11 @@ void AnimationStation::SetMode(uint8_t mode) {
+   AnimationEffects newEffect =
+       static_cast<AnimationEffects>(animationOptions.baseAnimationIndex);
+ 
++  if (!isEffectAvailable(newEffect)) {
++    newEffect = static_cast<AnimationEffects>(AdjustIndex(1));
++    animationOptions.baseAnimationIndex = newEffect;
++  }
++
+   if (this->baseAnimation != nullptr) {
+     delete this->baseAnimation;
+   }
+@@ -197,6 +200,10 @@ void AnimationStation::SetMode(uint8_t mode) {
+     this->baseAnimation = new CustomTheme(matrix);
+     this->buttonAnimation = new CustomThemePressed(matrix, lastPressed);
+     break;
++  case AnimationEffects::EFFECT_GRID_GRADIENT:
++    this->baseAnimation = new GridGradient(matrix);
++    this->buttonAnimation = new NoAnimation(matrix);
++    break;
+   default:
+     this->baseAnimation = new StaticColor(matrix);
+     this->buttonAnimation = new StaticColor(matrix, lastPressed);
+@@ -248,3 +255,13 @@ void AnimationStation::IncreaseBrightness() {
+ void AnimationStation::DimBrightnessTo0() {
+   brightnessX = 0;
+ }
++
++bool AnimationStation::isEffectAvailable(AnimationEffects effect) {
++  AnimationOptions & animationOptions = Storage::getInstance().getAnimationOptions();
++
++  if (effect == AnimationEffects::EFFECT_CUSTOM_THEME && !animationOptions.hasCustomTheme) {
++    return false;
++  }
++
++  return effect <= AnimationEffects::EFFECT_GRID_GRADIENT;
++}
+diff --git a/src/animationstation/effects/gridgradient.cpp b/src/animationstation/effects/gridgradient.cpp
+new file mode 100644
+index 00000000..f4d84ce8
+--- /dev/null
++++ b/src/animationstation/effects/gridgradient.cpp
+@@ -0,0 +1,402 @@
++#include "gridgradient.h"
++#include "storagemanager.h"
++
++#include <algorithm>
++#include <cmath>
++#include <map>
++#include <set>
++
++// Preset B uses the same 4-color horizontal gradient as Preset A over a 7x4 grid.
++// Gradient phase is based only on the X coordinate (left to right).
++// TouchPadCenter (A2) is included at grid position (3,0).
++namespace {
++struct GridLayoutPresetB {
++    int x;
++    int y;
++    uint32_t mask;
++};
++
++constexpr int GRID_PRESET_B_WIDTH = 7;
++constexpr int GRID_PRESET_B_HEIGHT = 4;
++
++const GridLayoutPresetB GRID_LAYOUT_PRESET_B[] = {
++    { 3, 0, GAMEPAD_MASK_A2 },
++    { 1, 1, GAMEPAD_MASK_DU },
++    { 3, 1, GAMEPAD_MASK_B3 },
++    { 4, 1, GAMEPAD_MASK_B4 },
++    { 5, 1, GAMEPAD_MASK_R1 },
++    { 6, 1, GAMEPAD_MASK_L1 },
++    { 0, 2, GAMEPAD_MASK_DL },
++    { 2, 2, GAMEPAD_MASK_DR },
++    { 3, 2, GAMEPAD_MASK_B1 },
++    { 4, 2, GAMEPAD_MASK_B2 },
++    { 5, 2, GAMEPAD_MASK_R2 },
++    { 6, 2, GAMEPAD_MASK_L2 },
++    { 1, 3, GAMEPAD_MASK_DD },
++    { 3, 3, GAMEPAD_MASK_L3 },
++    { 4, 3, GAMEPAD_MASK_R3 },
++};
++
++constexpr GridGradientSpeed GRID_GRADIENT_SPEED_BY_INDEX[] = {
++    GRID_GRADIENT_SPEED_VERY_SLOW,
++    GRID_GRADIENT_SPEED_SLOW,
++    GRID_GRADIENT_SPEED_NORMAL,
++    GRID_GRADIENT_SPEED_FAST,
++    GRID_GRADIENT_SPEED_VERY_FAST,
++};
++
++constexpr uint32_t GRID_GRADIENT_INTERVAL_MS[] = { 25, 20, 16, 30, 12 };
++constexpr uint32_t GRID_GRADIENT_COLUMN_DURATION_MS[] = { 1400, 1000, 750, 1800, 500 };
++} // namespace
++
++GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
++    setupButtons();
++    setupLeverPositions();
++    setupPresetBCells();
++}
++
++void GridGradient::setupButtons() {
++    struct ColumnDefinition {
++        uint8_t column;
++        std::vector<uint32_t> masks;
++    };
++
++    const ColumnDefinition columns[] = {
++        { 0, { GAMEPAD_MASK_A2, GAMEPAD_MASK_B1, GAMEPAD_MASK_B3, GAMEPAD_MASK_L3 } }, // TouchpadCenter, Square, Cross, L3
++        { 1, { GAMEPAD_MASK_B2, GAMEPAD_MASK_B4, GAMEPAD_MASK_R3 } },                   // Triangle, Circle, R3
++        { 2, { GAMEPAD_MASK_R1, GAMEPAD_MASK_R2 } },                                    // R1, R2
++        { 3, { GAMEPAD_MASK_L1, GAMEPAD_MASK_L2 } },                                    // L1, L2
++    };
++
++    // Map masks to all discovered pixels so we can apply press blending correctly
++    std::map<uint32_t, std::vector<Pixel>> maskToPixels;
++
++    for (auto &row : matrix->pixels) {
++        for (auto &pixel : row) {
++            if (pixel.index == NO_PIXEL.index || pixel.positions.empty())
++                continue;
++
++            maskToPixels[pixel.mask].push_back(pixel);
++        }
++    }
++
++    for (auto &column : columnLeds) {
++        column.clear();
++    }
++
++    gridButtons.clear();
++
++    for (auto &definition : columns) {
++        for (auto mask : definition.masks) {
++            auto it = maskToPixels.find(mask);
++            if (it == maskToPixels.end())
++                continue;
++
++            for (auto &pixel : it->second) {
++                gridButtons.push_back({ pixel, definition.column });
++                for (auto pos : pixel.positions) {
++                    if (pos < 100) {
++                        columnLeds[definition.column].push_back(pos);
++                    }
++                }
++            }
++        }
++    }
++}
++
++void GridGradient::setupLeverPositions() {
++    const uint32_t leverMasks[] = { GAMEPAD_MASK_DU, GAMEPAD_MASK_DD, GAMEPAD_MASK_DL, GAMEPAD_MASK_DR };
++
++    for (auto &row : matrix->pixels) {
++        for (auto &pixel : row) {
++            if (pixel.index == NO_PIXEL.index)
++                continue;
++
++            for (auto mask : leverMasks) {
++                if (pixel.mask == mask) {
++                    for (auto pos : pixel.positions) {
++                        leverPositions[mask].push_back(pos);
++                    }
++                    break;
++                }
++            }
++        }
++    }
++}
++
++void GridGradient::setupPresetBCells() {
++    presetBCells.clear();
++
++    std::map<uint32_t, std::vector<uint8_t>> maskToPositions;
++
++    for (auto &row : matrix->pixels) {
++        for (auto &pixel : row) {
++            if (pixel.index == NO_PIXEL.index || pixel.positions.empty())
++                continue;
++
++            for (auto pos : pixel.positions) {
++                if (pos < 100) {
++                    maskToPositions[pixel.mask].push_back(pos);
++                }
++            }
++        }
++    }
++
++    for (auto &cell : GRID_LAYOUT_PRESET_B) {
++        auto it = maskToPositions.find(cell.mask);
++        if (it == maskToPositions.end())
++            continue;
++
++        presetBCells.push_back({ cell.x, cell.y, cell.mask, it->second });
++    }
++}
++
++GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
++    const int32_t clamped = std::clamp<int32_t>(value, 0, 4);
++    return GRID_GRADIENT_SPEED_BY_INDEX[clamped];
++}
++
++uint32_t GridGradient::getIntervalMs(GridGradientSpeed speed) const {
++    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 4);
++    return GRID_GRADIENT_INTERVAL_MS[clamped];
++}
++
++uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
++    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 4);
++    return GRID_GRADIENT_COLUMN_DURATION_MS[clamped];
++}
++
++bool GridGradient::isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const {
++    return pressedMasks.find(mask) != pressedMasks.end();
++}
++
++RGB GridGradient::interpolate(const RGB &from, const RGB &to, float t) const {
++    RGB out;
++    out.r = static_cast<uint8_t>(from.r + (to.r - from.r) * t);
++    out.g = static_cast<uint8_t>(from.g + (to.g - from.g) * t);
++    out.b = static_cast<uint8_t>(from.b + (to.b - from.b) * t);
++    out.w = static_cast<uint8_t>(from.w + (to.w - from.w) * t);
++    return out;
++}
++
++RGB GridGradient::columnColor(float t, const RGB &colorA, const RGB &colorB, const RGB &colorC, const RGB &colorD) const {
++    if (t < 0.25f) {
++        return interpolate(colorA, colorB, t / 0.25f);
++    }
++
++    if (t < 0.50f) {
++        return interpolate(colorB, colorC, (t - 0.25f) / 0.25f);
++    }
++
++    if (t < 0.75f) {
++        return interpolate(colorC, colorD, (t - 0.50f) / 0.25f);
++    }
++
++    return interpolate(colorD, colorA, (t - 0.75f) / 0.25f);
++}
++
++void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &pressedMasks, const RGB &caseNormal, const RGB &casePress) {
++    const LEDOptions &ledOptions = Storage::getInstance().getLedOptions();
++    int32_t start = ledOptions.caseRGBIndex;
++    uint32_t count = ledOptions.caseRGBCount;
++
++    if (start < 0 || count == 0) {
++        return;
++    }
++
++    uint32_t limit = std::min<uint32_t>(count, 100 - start);
++
++    struct DirectionConfig {
++        uint32_t mask;
++        pb_size_t count;
++        const int32_t *values;
++    };
++
++    const AnimationOptions &options = Storage::getInstance().getAnimationOptions();
++    const DirectionConfig configs[] = {
++        { GAMEPAD_MASK_DU, options.gridCaseUpIndices_count, options.gridCaseUpIndices },
++        { GAMEPAD_MASK_DD, options.gridCaseDownIndices_count, options.gridCaseDownIndices },
++        { GAMEPAD_MASK_DR, options.gridCaseRightIndices_count, options.gridCaseRightIndices },
++        { GAMEPAD_MASK_DL, options.gridCaseLeftIndices_count, options.gridCaseLeftIndices },
++    };
++
++    std::set<uint32_t> activeTargets;
++    for (auto &config : configs) {
++        if (!isMaskPressed(config.mask, pressedMasks))
++            continue;
++
++        for (pb_size_t i = 0; i < config.count; i++) {
++            int32_t offset = config.values[i];
++            if (offset < 0)
++                continue;
++
++            uint32_t target = static_cast<uint32_t>(start + offset);
++            if (target >= static_cast<uint32_t>(start) && target < static_cast<uint32_t>(start) + limit) {
++                activeTargets.insert(target);
++            }
++        }
++    }
++
++    for (uint32_t i = 0; i < limit; i++) {
++        uint32_t target = static_cast<uint32_t>(start + i);
++        bool pressed = activeTargets.find(target) != activeTargets.end();
++
++        if (pressed) {
++            times[target] = coolDownTimeInMs;
++            hitColor[target] = casePress;
++            frame[target] = casePress;
++        } else {
++            DecrementFadeCounter(target);
++            frame[target] = BlendColor(hitColor[target], caseNormal, times[target]);
++        }
++    }
++}
++
++bool GridGradient::Animate(RGB (&frame)[100]) {
++    if (!time_reached(this->nextRunTime)) {
++        return false;
++    }
++
++    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
++    const GridGradientSpeed speed = resolveSpeed(animationOptions.gridGradientSpeed);
++    const uint8_t gridPreset = static_cast<uint8_t>(animationOptions.gridGradientPreset);
++
++    UpdateTime();
++
++    std::set<uint32_t> pressedMasks;
++    for (auto &p : pixels) {
++        pressedMasks.insert(p.mask);
++    }
++
++    std::fill_n(frame, 100, ColorBlack);
++
++    RGB colorA(animationOptions.gridGradientColorA);
++    RGB colorB(animationOptions.gridGradientColorB);
++    RGB colorC(animationOptions.gridGradientColorC);
++    RGB colorD(animationOptions.gridGradientColorD);
++    RGB pressColor(animationOptions.gridButtonPressColor);
++
++    uint32_t interval = getIntervalMs(speed);
++    uint32_t columnDurationMs = getColumnDurationMs(speed);
++
++    float delta = static_cast<float>(updateTimeInMs) / static_cast<float>(columnDurationMs);
++    globalPhase += delta;
++
++    if (globalPhase >= 1.0f) {
++        globalPhase = std::fmod(globalPhase, 1.0f);
++    }
++
++    nextRunTime = make_timeout_time_ms(interval);
++
++    if (gridPreset == 0) {
++        // Determine per-column base colors
++        std::array<RGB, 4> columnColors = { colorA, colorA, colorA, colorA };
++        constexpr float phaseOffset = 1.0f / 4.0f;
++        for (size_t col = 0; col < columnColors.size(); col++) {
++            float columnPhase = std::fmod(globalPhase + static_cast<float>(col) * phaseOffset, 1.0f);
++            columnColors[col] = columnColor(columnPhase, colorA, colorB, colorC, colorD);
++        }
++
++        // Render base gradient per column
++        for (size_t col = 0; col < columnLeds.size(); col++) {
++            for (auto pos : columnLeds[col]) {
++                if (pos < 100) {
++                    frame[pos] = columnColors[col];
++                }
++            }
++        }
++
++        // Apply press overlay per button pixel
++        for (auto &button : gridButtons) {
++            if (button.pixel.index == NO_PIXEL.index || button.pixel.positions.empty())
++                continue;
++
++            bool pressed = isMaskPressed(button.pixel.mask, pressedMasks);
++            RGB baseColor = columnColors[button.column];
++            RGB resolved = baseColor;
++
++            if (pressed) {
++                times[button.pixel.index] = coolDownTimeInMs;
++                hitColor[button.pixel.index] = pressColor;
++                resolved = pressColor;
++            } else {
++                DecrementFadeCounter(button.pixel.index);
++                resolved = BlendColor(hitColor[button.pixel.index], baseColor, times[button.pixel.index]);
++            }
++
++            for (auto pos : button.pixel.positions) {
++                if (pos < 100) {
++                    frame[pos] = resolved;
++                }
++            }
++        }
++
++        RGB leverNormal(animationOptions.gridLeverNormalColor);
++        RGB leverPress(animationOptions.gridLeverPressColor);
++
++        for (auto &entry : leverPositions) {
++            bool pressed = isMaskPressed(entry.first, pressedMasks);
++            for (auto pos : entry.second) {
++                if (pos >= 100)
++                    continue;
++
++                if (pressed) {
++                    times[pos] = coolDownTimeInMs;
++                    hitColor[pos] = leverPress;
++                    frame[pos] = leverPress;
++                } else {
++                    DecrementFadeCounter(pos);
++                    frame[pos] = BlendColor(hitColor[pos], leverNormal, times[pos]);
++                }
++            }
++        }
++    } else {
++        const float maxIndex = static_cast<float>(GRID_PRESET_B_WIDTH - 1);
++
++        for (auto &cell : presetBCells) {
++            if (cell.indices.empty())
++                continue;
++
++            float normalizedX = std::clamp(static_cast<float>(cell.x) / maxIndex, 0.0f, 1.0f);
++            float cellPhase = std::fmod(globalPhase + normalizedX, 1.0f);
++            RGB baseColor = columnColor(cellPhase, colorA, colorB, colorC, colorD);
++
++            bool pressed = isMaskPressed(cell.mask, pressedMasks);
++
++            for (auto pos : cell.indices) {
++                if (pos >= 100)
++                    continue;
++
++                if (pressed) {
++                    times[pos] = coolDownTimeInMs;
++                    hitColor[pos] = pressColor;
++                    frame[pos] = pressColor;
++                } else {
++                    DecrementFadeCounter(pos);
++                    frame[pos] = BlendColor(hitColor[pos], baseColor, times[pos]);
++                }
++            }
++        }
++    }
++
++    RGB caseNormal(animationOptions.gridCaseNormalColor);
++    RGB casePress(animationOptions.gridCaseLeverPressColor);
++    renderCaseLeds(frame, pressedMasks, caseNormal, casePress);
++
++    return true;
++}
++
++void GridGradient::ParameterUp() {
++    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
++    const int32_t current =
++        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4);
++    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>((current + 1) % 5);
++}
++
++void GridGradient::ParameterDown() {
++    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
++    const int32_t current =
++        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4);
++    animationOptions.gridGradientSpeed =
++        static_cast<GridGradientSpeed>(current == 0 ? 4 : current - 1);
++}
+diff --git a/src/config_utils.cpp b/src/config_utils.cpp
+index 478a6b21..b9f4d78e 100644
+--- a/src/config_utils.cpp
++++ b/src/config_utils.cpp
+@@ -431,6 +431,9 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
+     INIT_UNSET_PROPERTY(config.displayOptions, inputHistoryLength, INPUT_HISTORY_LENGTH);
+     INIT_UNSET_PROPERTY(config.displayOptions, inputHistoryCol, INPUT_HISTORY_COL);
+     INIT_UNSET_PROPERTY(config.displayOptions, inputHistoryRow, INPUT_HISTORY_ROW);
++    INIT_UNSET_PROPERTY(config.displayOptions, disableWhenP5General, 0);
++    INIT_UNSET_PROPERTY(config.displayOptions, p5GeneralOledSafeMode, 1);
++    INIT_UNSET_PROPERTY(config.displayOptions, p5GeneralOledMode, 2);
+ 
+     ButtonLayoutParamsLeft& paramsLeft = config.displayOptions.buttonLayoutCustomOptions.paramsLeft;
+     INIT_UNSET_PROPERTY(paramsLeft, layout, BUTTON_LAYOUT);
+@@ -588,6 +591,27 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
+     INIT_UNSET_PROPERTY(config.animationOptions, alCustomStaticThemeIndex, AMBIENT_CUSTOM_THEME);
+     INIT_UNSET_PROPERTY(config.animationOptions, alCustomStaticColorIndex, AMBIENT_STATIC_COLOR);
+ 
++    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorA, GRID_GRADIENT_COLOR_A);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorB, GRID_GRADIENT_COLOR_B);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorC, GRID_GRADIENT_COLOR_C);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientColorD, GRID_GRADIENT_COLOR_D);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridButtonPressColor, GRID_GRADIENT_PRESS_COLOR);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientSpeed, static_cast<GridGradientSpeed>(GRID_GRADIENT_SPEED));
++    INIT_UNSET_PROPERTY(config.animationOptions, gridGradientPreset, GRID_GRADIENT_PRESET);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridLeverNormalColor, GRID_GRADIENT_LEVER_NORMAL);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridLeverPressColor, GRID_GRADIENT_LEVER_PRESS);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridCaseNormalColor, GRID_GRADIENT_CASE_NORMAL);
++    INIT_UNSET_PROPERTY(config.animationOptions, gridCaseLeverPressColor, GRID_GRADIENT_CASE_PRESS);
++
++    if (!config.animationOptions.gridCaseUpIndices_count)
++        config.animationOptions.gridCaseUpIndices_count = 0;
++    if (!config.animationOptions.gridCaseDownIndices_count)
++        config.animationOptions.gridCaseDownIndices_count = 0;
++    if (!config.animationOptions.gridCaseLeftIndices_count)
++        config.animationOptions.gridCaseLeftIndices_count = 0;
++    if (!config.animationOptions.gridCaseRightIndices_count)
++        config.animationOptions.gridCaseRightIndices_count = 0;
++
+     // addonOptions.bootselButtonOptions
+     INIT_UNSET_PROPERTY(config.addonOptions.bootselButtonOptions, enabled, !!BOOTSEL_BUTTON_ENABLED);
+     INIT_UNSET_PROPERTY(config.addonOptions.bootselButtonOptions, buttonMap, BOOTSEL_BUTTON_MASK);
+diff --git a/src/display/GPGFX.cpp b/src/display/GPGFX.cpp
+index fc75791d..b156cd93 100644
+--- a/src/display/GPGFX.cpp
++++ b/src/display/GPGFX.cpp
+@@ -87,8 +87,8 @@ void GPGFX::clearScreen() {
+     this->displayDriver->clear();
+ }
+ 
+-void GPGFX::render() {
+-    this->displayDriver->drawBuffer(NULL);
++void GPGFX::render(uint8_t pages) {
++    this->displayDriver->drawBuffer(NULL, pages);
+ }
+ 
+ uint32_t GPGFX::getPixel(uint16_t x, uint16_t y) {
+diff --git a/src/display/ui/elements/GPScreen.cpp b/src/display/ui/elements/GPScreen.cpp
+index a02dfa36..c91efa95 100644
+--- a/src/display/ui/elements/GPScreen.cpp
++++ b/src/display/ui/elements/GPScreen.cpp
+@@ -4,7 +4,7 @@ const bool prioritySort(GPWidget * a, GPWidget * b) {
+     return a->getPriority() > b->getPriority();
+ }
+ 
+-void GPScreen::draw() {
++void GPScreen::draw(uint8_t pageLimit) {
+     getRenderer()->clearScreen();
+ 
+     // draw the display list
+@@ -15,7 +15,7 @@ void GPScreen::draw() {
+         }
+     }
+     drawScreen();
+-    getRenderer()->render();
++    getRenderer()->render(pageLimit);
+ }
+ 
+ void GPScreen::clear() {
+diff --git a/src/drivers/p5general/P5GeneralDriver.cpp b/src/drivers/p5general/P5GeneralDriver.cpp
+index b7bedc24..9484b35d 100644
+--- a/src/drivers/p5general/P5GeneralDriver.cpp
++++ b/src/drivers/p5general/P5GeneralDriver.cpp
+@@ -102,6 +102,26 @@ bool P5GeneralDriver::getDongleAuthRequired() {
+     return true;
+ }
+ 
++bool P5GeneralDriver::isAuthBusy() {
++    return p5GeneralAuthData &&
++        (p5GeneralAuthData->hash_pending ||
++         p5GeneralAuthData->hash_ready ||
++         p5GeneralAuthData->passthrough_state != P5GeneralGPAuthState::p5g_auth_idle ||
++         !p5GeneralAuthData->dongle_ready);
++}
++
++bool P5GeneralDriver::shouldDeferIO() {
++    if (!p5GeneralAuthData) {
++        return false;
++    }
++
++    return p5GeneralAuthData->hash_pending ||
++           p5GeneralAuthData->hash_ready ||
++           p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_send_f0_wait ||
++           p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_recv_f1_wait ||
++           p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_recv_f2_wait;
++}
++
+ bool P5GeneralDriver::process(Gamepad * gamepad) {
+     if (!p5GeneralAuthData || !p5GeneralAuthData->dongle_ready) {
+         return false;
+diff --git a/src/gp2040aux.cpp b/src/gp2040aux.cpp
+index 3a5df733..76a1b654 100644
+--- a/src/gp2040aux.cpp
++++ b/src/gp2040aux.cpp
+@@ -51,14 +51,15 @@ void GP2040Aux::setup() {
+ }
+ 
+ void GP2040Aux::run() {
+-	while (1) {
+-		// Pre, Process, and Post
+-		addons.PreprocessAddons();
+-		addons.ProcessAddons();
++        while (1) {
++                // Pre, Process, and Post
++                addons.PreprocessAddons();
+ 
+-		// Run auxiliary functions for input driver on Core1
+-		if ( inputDriver != nullptr ) {
+-			inputDriver->processAux();
+-		}
+-	}
++                // Run auxiliary functions for input driver on Core1
++                if ( inputDriver != nullptr ) {
++                        inputDriver->processAux();
++                }
++
++                addons.ProcessAddons();
++        }
+ }
+diff --git a/src/interfaces/i2c/ssd1306/tiny_ssd1306.cpp b/src/interfaces/i2c/ssd1306/tiny_ssd1306.cpp
+index a2fc71c4..ea7c22eb 100644
+--- a/src/interfaces/i2c/ssd1306/tiny_ssd1306.cpp
++++ b/src/interfaces/i2c/ssd1306/tiny_ssd1306.cpp
+@@ -541,48 +541,55 @@ void GPGFX_TinySSD1306::drawSprite(uint8_t* image, uint16_t width, uint16_t heig
+ }
+ 
+ void GPGFX_TinySSD1306::drawBuffer(uint8_t* pBuffer) {
+-	uint16_t bufferSize = MAX_SCREEN_SIZE;
+-	uint8_t buffer[bufferSize+1] = {SET_START_LINE};
++        drawBuffer(pBuffer, MAX_SCREEN_HEIGHT / 8);
++}
++
++void GPGFX_TinySSD1306::drawBuffer(uint8_t* pBuffer, uint8_t pages) {
++        uint16_t bufferSize = MAX_SCREEN_SIZE;
++        uint8_t buffer[bufferSize+1] = {SET_START_LINE};
++
++        uint8_t maxPages = (MAX_SCREEN_HEIGHT / 8);
++        if (pages == 0 || pages > maxPages) {
++            pages = maxPages;
++        }
+ 
+-	int result = -1;
+-	
+-    if (this->screenType == ScreenAlternatives::SCREEN_132x64) {
++        if (this->screenType == ScreenAlternatives::SCREEN_132x64) {
+         uint16_t x = 0;
+-        uint16_t y = 0;
+-        for (y = 0; y < (MAX_SCREEN_HEIGHT/8); y++) {
++        for (uint8_t i = 0; i < pages; i++) {
++            uint8_t y = (framePage + i) % maxPages;
+             sendCommand(0xB0 + y);
+             sendCommand(x & 0x0F);
+             sendCommand(0x10 | (x >> 4));
+-        
++
+             if (pBuffer == NULL) {
+                 memcpy(&buffer[1],&frameBuffer[y*MAX_SCREEN_WIDTH],MAX_SCREEN_WIDTH);
+             } else {
+                 memcpy(&buffer[1],&pBuffer[y*MAX_SCREEN_WIDTH],MAX_SCREEN_WIDTH);
+             }
+-        
+-            result = _options.i2c->write(_options.address, buffer, MAX_SCREEN_WIDTH+3, false);
++
++            _options.i2c->write(_options.address, buffer, MAX_SCREEN_WIDTH+3, false);
+         }
+     } else {
+-        sendCommand(CommandOps::PAGE_ADDRESS);
+-        sendCommand(0x00);
+-        sendCommand(0x07);
+-        sendCommand(CommandOps::COLUMN_ADDRESS);
+-        sendCommand(0x00);
+-        sendCommand(0x7F);
+-
+-        if (pBuffer == NULL) {
+-            memcpy(&buffer[1],frameBuffer,bufferSize);
+-        } else {
+-            memcpy(&buffer[1],pBuffer,bufferSize);
++        for (uint8_t i = 0; i < pages; i++) {
++            uint8_t page = (framePage + i) % maxPages;
++
++            sendCommand(CommandOps::PAGE_ADDRESS);
++            sendCommand(page);
++            sendCommand(page);
++            sendCommand(CommandOps::COLUMN_ADDRESS);
++            sendCommand(0x00);
++            sendCommand(0x7F);
++
++            if (pBuffer == NULL) {
++                memcpy(&buffer[1], &frameBuffer[page * MAX_SCREEN_WIDTH], MAX_SCREEN_WIDTH);
++            } else {
++                memcpy(&buffer[1], &pBuffer[page * MAX_SCREEN_WIDTH], MAX_SCREEN_WIDTH);
++            }
++            _options.i2c->write(_options.address, buffer, MAX_SCREEN_WIDTH + 1, false);
+         }
+-        result = _options.i2c->write(_options.address, buffer, sizeof(buffer), false);
+     }
+ 
+-	if (framePage < MAX_SCREEN_HEIGHT/8) {
+-		framePage++;
+-	} else {
+-		framePage = 0;
+-	}
++        framePage = (framePage + pages) % maxPages;
+ }
+ 
+ void GPGFX_TinySSD1306::rotatePoint(double cx, double cy, double &x, double &y, double angle) {
+diff --git a/src/layoutmanager.cpp b/src/layoutmanager.cpp
+index 0c43240d..1651aa98 100644
+--- a/src/layoutmanager.cpp
++++ b/src/layoutmanager.cpp
+@@ -139,6 +139,8 @@ LayoutManager::LayoutList LayoutManager::getLeftLayout(uint16_t index) {
+             return draw6GAWDAllButtonLeft();
+         case BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A:
+             return draw6GAWDAllButtonPlusLeft();
++        case BUTTON_LAYOUT_STICK_11BUTTONS:
++            return drawArcadeStick11Buttons();
+         case BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A:
+             return drawBoardDefinedAlt0A();
+         case BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A:
+@@ -247,6 +249,8 @@ LayoutManager::LayoutList LayoutManager::getRightLayout(uint16_t index) {
+             return draw6GAWDAllButtonRight();
+         case BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B:
+             return draw6GAWDAllButtonPlusRight();
++        case BUTTON_LAYOUT_STICK_11BUTTONS_B:
++            return drawStick11ButtonsRight();
+         case BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B:
+             return this->drawBoardDefinedAlt0B();
+         case BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B:
+@@ -379,6 +383,11 @@ LayoutManager::LayoutList LayoutManager::drawArcadeStick()
+     return BUTTON_GROUP_ARCADE_STICK;
+ }
+ 
++LayoutManager::LayoutList LayoutManager::drawArcadeStick11Buttons()
++{
++    return BUTTON_GROUP_ARCADE_STICK_11BUTTONS;
++}
++
+ LayoutManager::LayoutList LayoutManager::drawVLXA()
+ {
+     return BUTTON_GROUP_VLXA;
+@@ -544,6 +553,11 @@ LayoutManager::LayoutList LayoutManager::drawSticklessButtons14B()
+     return BUTTON_GROUP_STICKLESS_BUTTONS14B;
+ }
+ 
++LayoutManager::LayoutList LayoutManager::drawStick11ButtonsRight()
++{
++    return BUTTON_GROUP_STICK_11BUTTONS_RIGHT;
++}
++
+ LayoutManager::LayoutList LayoutManager::drawDancepadA()
+ {
+     return BUTTON_GROUP_DANCEPAD_A;
+diff --git a/src/webconfig.cpp b/src/webconfig.cpp
+index d59cb1ac..f365967a 100644
+--- a/src/webconfig.cpp
++++ b/src/webconfig.cpp
+@@ -12,6 +12,7 @@
+ #include "types.h"
+ #include "version.h"
+ 
++#include <algorithm>
+ #include <cstring>
+ #include <string>
+ #include <vector>
+@@ -443,6 +444,9 @@ std::string setDisplayOptions(DisplayOptions& displayOptions)
+     readDoc(displayOptions.inputHistoryLength, doc, "inputHistoryLength");
+     readDoc(displayOptions.inputHistoryCol, doc, "inputHistoryCol");
+     readDoc(displayOptions.inputHistoryRow, doc, "inputHistoryRow");
++    readDoc(displayOptions.disableWhenP5General, doc, "disableWhenP5General");
++    readDoc(displayOptions.p5GeneralOledSafeMode, doc, "p5GeneralOledSafeMode");
++    readDoc(displayOptions.p5GeneralOledMode, doc, "p5GeneralOledMode");
+ 
+     readDoc(displayOptions.buttonLayoutCustomOptions.paramsLeft.layout, doc, "buttonLayoutCustomOptions", "params", "layout");
+     readDoc(displayOptions.buttonLayoutCustomOptions.paramsLeft.common.startX, doc, "buttonLayoutCustomOptions", "params", "startX");
+@@ -499,6 +503,9 @@ std::string getDisplayOptions() // Manually set Document Attributes for the disp
+     writeDoc(doc, "inputHistoryLength", displayOptions.inputHistoryLength);
+     writeDoc(doc, "inputHistoryCol", displayOptions.inputHistoryCol);
+     writeDoc(doc, "inputHistoryRow", displayOptions.inputHistoryRow);
++    writeDoc(doc, "disableWhenP5General", displayOptions.disableWhenP5General);
++    writeDoc(doc, "p5GeneralOledSafeMode", displayOptions.p5GeneralOledSafeMode);
++    writeDoc(doc, "p5GeneralOledMode", displayOptions.p5GeneralOledMode);
+ 
+     writeDoc(doc, "buttonLayoutCustomOptions", "params", "layout", displayOptions.buttonLayoutCustomOptions.paramsLeft.layout);
+     writeDoc(doc, "buttonLayoutCustomOptions", "params", "startX", displayOptions.buttonLayoutCustomOptions.paramsLeft.common.startX);
+@@ -803,6 +810,7 @@ std::string setLedOptions()
+     };
+ 
+     LEDOptions& ledOptions = Storage::getInstance().getLedOptions();
++    AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
+     docToPin(ledOptions.dataPin, doc, "dataPin");
+     readDoc(ledOptions.ledFormat, doc, "ledFormat");
+     readDoc(ledOptions.ledLayout, doc, "ledLayout");
+@@ -842,6 +850,42 @@ std::string setLedOptions()
+     readDoc(ledOptions.caseRGBIndex, doc, "caseRGBIndex");
+     readDoc(ledOptions.caseRGBCount, doc, "caseRGBCount");
+ 
++    readDoc(animationOptions.gridGradientColorA, doc, "gridGradientColorA");
++    readDoc(animationOptions.gridGradientColorB, doc, "gridGradientColorB");
++    readDoc(animationOptions.gridGradientColorC, doc, "gridGradientColorC");
++    readDoc(animationOptions.gridGradientColorD, doc, "gridGradientColorD");
++    readDoc(animationOptions.gridButtonPressColor, doc, "gridButtonPressColor");
++    readDoc(animationOptions.gridGradientSpeed, doc, "gridGradientSpeed");
++    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>(
++        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4));
++    readDoc(animationOptions.gridGradientPreset, doc, "gridGradientPreset");
++    readDoc(animationOptions.gridLeverNormalColor, doc, "gridLeverNormalColor");
++    readDoc(animationOptions.gridLeverPressColor, doc, "gridLeverPressColor");
++    readDoc(animationOptions.gridCaseNormalColor, doc, "gridCaseNormalColor");
++    readDoc(animationOptions.gridCaseLeverPressColor, doc, "gridCaseLeverPressColor");
++
++    const auto readCaseDirection = [&](int32_t *dest, pb_size_t &count, const char *key) {
++        if (!doc.containsKey(key)) {
++            return;
++        }
++        JsonArray arr = doc[key].as<JsonArray>();
++        count = 0;
++        for (JsonVariant value : arr) {
++            if (!value.is<int32_t>()) {
++                continue;
++            }
++            if (count >= 4) {
++                break;
++            }
++            dest[count++] = value.as<int32_t>();
++        }
++    };
++
++    readCaseDirection(animationOptions.gridCaseUpIndices, animationOptions.gridCaseUpIndices_count, "gridCaseUpIndices");
++    readCaseDirection(animationOptions.gridCaseDownIndices, animationOptions.gridCaseDownIndices_count, "gridCaseDownIndices");
++    readCaseDirection(animationOptions.gridCaseRightIndices, animationOptions.gridCaseRightIndices_count, "gridCaseRightIndices");
++    readCaseDirection(animationOptions.gridCaseLeftIndices, animationOptions.gridCaseLeftIndices_count, "gridCaseLeftIndices");
++
+     EventManager::getInstance().triggerEvent(new GPStorageSaveEvent(true));
+     return serialize_json(doc);
+ }
+@@ -902,6 +946,31 @@ std::string getLedOptions()
+     writeDoc(doc, "caseRGBIndex", ledOptions.caseRGBIndex);
+     writeDoc(doc, "caseRGBCount", ledOptions.caseRGBCount);
+ 
++    const AnimationOptions& animationOptions = Storage::getInstance().getAnimationOptions();
++    writeDoc(doc, "gridGradientColorA", ((RGB)animationOptions.gridGradientColorA).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridGradientColorB", ((RGB)animationOptions.gridGradientColorB).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridGradientColorC", ((RGB)animationOptions.gridGradientColorC).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridGradientColorD", ((RGB)animationOptions.gridGradientColorD).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridButtonPressColor", ((RGB)animationOptions.gridButtonPressColor).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridGradientSpeed", animationOptions.gridGradientSpeed);
++    writeDoc(doc, "gridGradientPreset", animationOptions.gridGradientPreset);
++    writeDoc(doc, "gridLeverNormalColor", ((RGB)animationOptions.gridLeverNormalColor).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridLeverPressColor", ((RGB)animationOptions.gridLeverPressColor).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridCaseNormalColor", ((RGB)animationOptions.gridCaseNormalColor).value(LED_FORMAT_RGB));
++    writeDoc(doc, "gridCaseLeverPressColor", ((RGB)animationOptions.gridCaseLeverPressColor).value(LED_FORMAT_RGB));
++
++    auto writeArray = [&](const char *key, const int32_t *src, size_t count) {
++        JsonArray arr = doc.createNestedArray(key);
++        for (size_t i = 0; i < count; i++) {
++            arr.add(src[i]);
++        }
++    };
++
++    writeArray("gridCaseUpIndices", animationOptions.gridCaseUpIndices, animationOptions.gridCaseUpIndices_count);
++    writeArray("gridCaseDownIndices", animationOptions.gridCaseDownIndices, animationOptions.gridCaseDownIndices_count);
++    writeArray("gridCaseRightIndices", animationOptions.gridCaseRightIndices, animationOptions.gridCaseRightIndices_count);
++    writeArray("gridCaseLeftIndices", animationOptions.gridCaseLeftIndices, animationOptions.gridCaseLeftIndices_count);
++
+     return serialize_json(doc);
+ }
+ 
+diff --git a/www/src/Icons/Flags/koKR.tsx b/www/src/Icons/Flags/koKR.tsx
+index a44cb047..ed8fcf0a 100644
+--- a/www/src/Icons/Flags/koKR.tsx
++++ b/www/src/Icons/Flags/koKR.tsx
+@@ -8,13 +8,13 @@ const koKR = () => (
+ 		height="1em"
+ 	>
+ 		<defs>
+-			<clipPath id="kr-a">
+-				<path fill-opacity=".7" d="M-95.8-.4h682.7v512H-95.8z" />
+-			</clipPath>
+-		</defs>
+-		<g
+-			fill-rule="evenodd"
+-			clip-path="url(#kr-a)"
++                        <clipPath id="kr-a">
++                                <path fillOpacity=".7" d="M-95.8-.4h682.7v512H-95.8z" />
++                        </clipPath>
++                </defs>
++                <g
++                        fillRule="evenodd"
++                        clipPath="url(#kr-a)"
+ 			transform="translate(89.8 .4) scale(.9375)"
+ 		>
+ 			<path fill="#fff" d="M-95.8-.4H587v512H-95.8Z" />
+diff --git a/www/src/Icons/Flags/trTR.tsx b/www/src/Icons/Flags/trTR.tsx
+index 1482e873..ee5c8a24 100644
+--- a/www/src/Icons/Flags/trTR.tsx
++++ b/www/src/Icons/Flags/trTR.tsx
+@@ -7,7 +7,7 @@ const trTR = () => (
+ 		width="1em"
+ 		height="1em"
+     >
+-      <g fill-rule="evenodd">
++      <g fillRule="evenodd">
+         <path fill="#e30a17" d="M0 0h640v480H0z"/>
+         <path
+             fill="#fff"
+diff --git a/www/src/Locales/de-DE/DisplayConfig.jsx b/www/src/Locales/de-DE/DisplayConfig.jsx
+index c729f782..3cb7c56a 100644
+--- a/www/src/Locales/de-DE/DisplayConfig.jsx
++++ b/www/src/Locales/de-DE/DisplayConfig.jsx
+@@ -35,9 +35,11 @@ export default {
+ 		'splash-mode-label': 'Splash Modus',
+ 		'splash-duration-label':
+ 			'Splash Dauer (Sekunden, 0 für immer eingeschaltet)',
+-		'display-saver-timeout-label':
+-			'Timeout für den Bildschirmschoner (Minuten)',
+-		'inverted-label': 'Invertiert',
+-		'turn-off-when-suspended': 'Ausschalten im Ruhezustand',
+-	},
++                'display-saver-timeout-label':
++                        'Timeout für den Bildschirmschoner (Minuten)',
++                'inverted-label': 'Invertiert',
++                'turn-off-when-suspended': 'Ausschalten im Ruhezustand',
++                'disable-when-p5general': 'OLED im P5General-Modus deaktivieren',
++                'p5general-oled-safe-mode': 'OLED-Aktualisierung in P5General verlangsamen (sicherer)',
++        },
+ };
+diff --git a/www/src/Locales/en/DisplayConfig.jsx b/www/src/Locales/en/DisplayConfig.jsx
+index 782a7de6..662f17e4 100644
+--- a/www/src/Locales/en/DisplayConfig.jsx
++++ b/www/src/Locales/en/DisplayConfig.jsx
+@@ -40,15 +40,26 @@ export default {
+ 		'splash-mode-label': 'Splash Mode',
+ 		'splash-duration-label': 'Splash Duration (seconds, 0 for Always On)',
+ 		'display-saver-timeout-label': 'Display Saver Timeout (minutes, 0 for Off)',
+-		'screen-saver-mode-label': 'Display Saver Mode',
+-		'inverted-label': 'Inverted',
+-		'power-management-header': 'Power Management',
+-		'turn-off-when-suspended': 'Turn Off When Suspended',
+-		'input-history-label': 'Input History',
+-		'display-state': {
+-			disabled: 'Disabled',
+-			enabled: 'Enabled',
+-		},
++                'screen-saver-mode-label': 'Display Saver Mode',
++                'inverted-label': 'Inverted',
++                'power-management-header': 'Power Management',
++                'turn-off-when-suspended': 'Turn Off When Suspended',
++                'disable-when-p5general': 'Disable OLED in P5General mode',
++                'p5general-oled-safe-mode': 'Throttle OLED refresh in P5General (safer)',
++                'p5general-oled-mode': 'P5General OLED pacing',
++                'p5general-oled-mode-help':
++                        'Adjust how aggressively OLED refreshes are spaced out while using P5General on PS5; idle periods auto-throttle even further.',
++                'p5general-oled-mode-descriptions': {
++                        safe: 'Balanced: chunked pages at ~32 ms cadence with a ~240 ms idle redraw (extra defer when "safe" is on).',
++                        low: 'Low: change-driven, slowest updates (~120 ms minimum, ~320 ms idle) and one page per tick.',
++                        medium: 'Medium: default pacing (~64 ms minimum, ~200 ms idle) sending two pages per tick.',
++                        high: 'High: fastest redraw (~32 ms minimum, ~120–180 ms idle) up to four pages per tick.',
++                },
++                'input-history-label': 'Input History',
++                'display-state': {
++                        disabled: 'Disabled',
++                        enabled: 'Enabled',
++                },
+ 		'flip-display': {
+ 			none: 'None',
+ 			flip: 'Flip',
+@@ -80,6 +91,6 @@ export default {
+ 			'socd-mode': 'SOCD Mode',
+ 			'macro-mode': 'Macro',
+ 			'profile-mode': 'Profile',
+-		},
+-	},
++                },
++        },
+ };
+diff --git a/www/src/Locales/en/LayoutConfig.jsx b/www/src/Locales/en/LayoutConfig.jsx
+index eac24967..3cfdddb6 100644
+--- a/www/src/Locales/en/LayoutConfig.jsx
++++ b/www/src/Locales/en/LayoutConfig.jsx
+@@ -36,10 +36,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMA: 'Custom',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_A: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_A: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD Left',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button Left',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky Left',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Board Defined Alternate 0',
++                        BUTTON_LAYOUT_6GAWD_A: '6GAWD Left',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button Left',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky Left',
++                        BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Board Defined Alternate 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: 'Board Defined Alternate 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: 'Board Defined Alternate 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: 'Board Defined Alternate 3',
+@@ -87,10 +88,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMB: 'Custom',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_B: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_B: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_B: '6GAWD Right',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button Right',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky Right',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Board Defined Alternate 0',
++                        BUTTON_LAYOUT_6GAWD_B: '6GAWD Right',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button Right',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky Right',
++                        BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Board Defined Alternate 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: 'Board Defined Alternate 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: 'Board Defined Alternate 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: 'Board Defined Alternate 3',
+diff --git a/www/src/Locales/en/LedConfig.jsx b/www/src/Locales/en/LedConfig.jsx
+index d17655e1..4115b237 100644
+--- a/www/src/Locales/en/LedConfig.jsx
++++ b/www/src/Locales/en/LedConfig.jsx
+@@ -33,14 +33,43 @@ export default {
+ 	},
+ 	'pled-pin-label': 'PLED #{{pin}} GPIO Pin',
+ 	'pled-index-label': 'PLED #{{index}} Index',
+-	'rgb-order': {
+-		'header-text': 'RGB LED Button Order',
+-		'sub-header-text':
+-			'Here you can define which buttons have RGB LEDs and in what order they run from the control board. This is required for certain LED animations and static theme support.',
+-		'sub-header1-text':
+-			'Drag and drop list items to assign and reorder the RGB LEDs.',
+-		'available-header-text': 'Available Buttons',
+-		'assigned-header-text': 'Assigned Buttons',
+-	},
+-	'turn-off-when-suspended': 'Turn Off When Suspended',
++        'rgb-order': {
++                'header-text': 'RGB LED Button Order',
++                'sub-header-text':
++                        'Here you can define which buttons have RGB LEDs and in what order they run from the control board. This is required for certain LED animations and static theme support.',
++                'sub-header1-text':
++                        'Drag and drop list items to assign and reorder the RGB LEDs.',
++                'available-header-text': 'Available Buttons',
++                'assigned-header-text': 'Assigned Buttons',
++        },
++        'turn-off-when-suspended': 'Turn Off When Suspended',
++        grid: {
++                'header-text': 'Grid Gradient Preset',
++                'sub-header-text':
++                        'Configure the built-in grid gradient animation preset. These colors and indices are stored on the controller and can be cycled to with the normal LED animation hotkeys.',
++                'gradient-a': 'Gradient Color A',
++                'gradient-b': 'Gradient Color B',
++                'gradient-c': 'Gradient Color C',
++                'gradient-d': 'Gradient Color D',
++                'button-press': 'Button Press Color',
++                'lever-normal': 'Lever Normal Color',
++                'lever-press': 'Lever Press Color',
++                'case-normal': 'Case Normal Color',
++                'case-press': 'Case Lever Press Color',
++                'speed-label': 'Gradient Speed',
++                'preset-label': 'Grid layout preset',
++                'preset-a': 'Preset A: levers + 11-button layout',
++                'preset-b': 'Preset B: 7×4 lever+button grid',
++                'speed-very-slow': 'Very Slow',
++                'speed-slow': 'Slow',
++                'speed-normal': 'Normal',
++                'speed-fast': 'Fast',
++                'speed-very-fast': 'Very Fast',
++                'case-help-text':
++                        'Case LED indices are offsets from the Case RGB index. Leave entries blank to skip LEDs for that direction.',
++                'case-up-label': 'Case LEDs for Up',
++                'case-down-label': 'Case LEDs for Down',
++                'case-right-label': 'Case LEDs for Right',
++                'case-left-label': 'Case LEDs for Left',
++        },
+ };
+diff --git a/www/src/Locales/es-MX/DisplayConfig.jsx b/www/src/Locales/es-MX/DisplayConfig.jsx
+index 5d34c487..d23bdf1a 100644
+--- a/www/src/Locales/es-MX/DisplayConfig.jsx
++++ b/www/src/Locales/es-MX/DisplayConfig.jsx
+@@ -40,12 +40,14 @@ export default {
+ 		'splash-mode-label': 'Modo de Pantalla de Inicio',
+ 		'splash-duration-label': 'Duración de Pantalla de Inicio (segundos, 0 para Siempre)',
+ 		'display-saver-timeout-label': 'Tiempo para Protector de Pantalla (minutos, 0 para Desactivar)',
+-		'screen-saver-mode-label': 'Modo Protector de Pantalla',
+-		'inverted-label': 'Invertido',
+-		'power-management-header': 'Administración de Energía',
+-		'turn-off-when-suspended': 'Apagar en Suspensión',
+-		'input-history-label': 'Historial de Entrada',
+-		'display-state': {
++                'screen-saver-mode-label': 'Modo Protector de Pantalla',
++                'inverted-label': 'Invertido',
++                'power-management-header': 'Administración de Energía',
++                'turn-off-when-suspended': 'Apagar en Suspensión',
++                'disable-when-p5general': 'Desactivar OLED en modo P5General',
++                'p5general-oled-safe-mode': 'Reducir la actualización OLED en P5General (más seguro)',
++                'input-history-label': 'Historial de Entrada',
++                'display-state': {
+ 			disabled: 'Desactivado',
+ 			enabled: 'Activado',
+ 		},
+diff --git a/www/src/Locales/es-MX/LayoutConfig.jsx b/www/src/Locales/es-MX/LayoutConfig.jsx
+index 5ef14c00..6e389ba0 100644
+--- a/www/src/Locales/es-MX/LayoutConfig.jsx
++++ b/www/src/Locales/es-MX/LayoutConfig.jsx
+@@ -36,10 +36,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMA: 'Personalizado',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_A: 'GH/RB Trastes',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_A: 'GH/RB Rasgueo',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD Izquierdo',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD Todo Botones Izquierdo',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD Todo Botones Meñique Izquierdo',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Definido por Placa Alternativo 0',
++                        BUTTON_LAYOUT_6GAWD_A: '6GAWD Izquierdo',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD Todo Botones Izquierdo',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD Todo Botones Meñique Izquierdo',
++                        BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Definido por Placa Alternativo 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: 'Definido por Placa Alternativo 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: 'Definido por Placa Alternativo 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: 'Definido por Placa Alternativo 3',
+@@ -87,10 +88,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMB: 'Personalizado',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_B: 'GH/RB Trastes',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_B: 'GH/RB Rasgueo',
+-			BUTTON_LAYOUT_6GAWD_B: '6GAWD Derecho',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD Todo Botones Derecho',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD Todo Botones Meñique Derecho',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Definido por Placa Alternativo 0',
++                        BUTTON_LAYOUT_6GAWD_B: '6GAWD Derecho',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD Todo Botones Derecho',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD Todo Botones Meñique Derecho',
++                        BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Definido por Placa Alternativo 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: 'Definido por Placa Alternativo 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: 'Definido por Placa Alternativo 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: 'Definido por Placa Alternativo 3',
+diff --git a/www/src/Locales/fr-FR/DisplayConfig.jsx b/www/src/Locales/fr-FR/DisplayConfig.jsx
+index bb5eae42..1c05d479 100644
+--- a/www/src/Locales/fr-FR/DisplayConfig.jsx
++++ b/www/src/Locales/fr-FR/DisplayConfig.jsx
+@@ -40,12 +40,14 @@ export default {
+ 		'splash-mode-label': 'Mode de l\'écran d\'accueil',
+ 		'splash-duration-label': 'Durée de l\'écran d\'accueil (en secondes, 0 pour toujours activé)',
+ 		'display-saver-timeout-label': 'Délai d\'extinction de l\'écran (en minutes)',
+-		'screen-saver-mode-label': 'Mode de l\'économiseur d\'écran',
+-		'inverted-label': 'Inversé',
+-		'power-management-header': 'Gestion de l\'alimentation',
+-		'turn-off-when-suspended': 'Éteindre lors de la mise en veille',
+-		'input-history-label': 'Historique des entrées',
+-		'display-state': {
++                'screen-saver-mode-label': 'Mode de l\'économiseur d\'écran',
++                'inverted-label': 'Inversé',
++                'power-management-header': 'Gestion de l\'alimentation',
++                'turn-off-when-suspended': 'Éteindre lors de la mise en veille',
++                'disable-when-p5general': 'Désactiver l’OLED en mode P5General',
++                'p5general-oled-safe-mode': 'Réduire le rafraîchissement OLED en P5General (plus sûr)',
++                'input-history-label': 'Historique des entrées',
++                'display-state': {
+ 			disabled: 'Désactivé',
+ 			enabled: 'Activé',
+ 		},
+diff --git a/www/src/Locales/fr-FR/LayoutConfig.jsx b/www/src/Locales/fr-FR/LayoutConfig.jsx
+index a0f72801..4c3a9bf0 100644
+--- a/www/src/Locales/fr-FR/LayoutConfig.jsx
++++ b/www/src/Locales/fr-FR/LayoutConfig.jsx
+@@ -36,10 +36,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMA: 'Personnalisé',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_A: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_A: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD LEFT',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD ALL BUTTON LEFT',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD ALL BUTTON LEFT PINKY',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Défini par la carte - Alternative 0',
++                        BUTTON_LAYOUT_6GAWD_A: '6GAWD LEFT',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD ALL BUTTON LEFT',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD ALL BUTTON LEFT PINKY',
++                        BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Défini par la carte - Alternative 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: 'Défini par la carte - Alternative 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: 'Défini par la carte - Alternative 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: 'Défini par la carte - Alternative 3',
+@@ -87,10 +88,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMB: 'Personnalisé',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_B: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_B: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_B: '6GAWD RIGHT',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD ALL BUTTON RIGHT',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD ALL BUTTON RIGHT PINKY',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Défini par la carte - Alternative 0',
++                        BUTTON_LAYOUT_6GAWD_B: '6GAWD RIGHT',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD ALL BUTTON RIGHT',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD ALL BUTTON RIGHT PINKY',
++                        BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Défini par la carte - Alternative 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: 'Défini par la carte - Alternative 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: 'Défini par la carte - Alternative 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: 'Défini par la carte - Alternative 3',
+diff --git a/www/src/Locales/ja-JP/DisplayConfig.jsx b/www/src/Locales/ja-JP/DisplayConfig.jsx
+index 4b4d6252..dfceed29 100644
+--- a/www/src/Locales/ja-JP/DisplayConfig.jsx
++++ b/www/src/Locales/ja-JP/DisplayConfig.jsx
+@@ -40,15 +40,26 @@ export default {
+ 		'splash-mode-label': 'スプラッシュモード',
+ 		'splash-duration-label': 'スプラッシュ表示時間 (秒, 0=常時)',
+ 		'display-saver-timeout-label': 'スクリーンセーバータイムアウト時間 (分, 0=無効)',
+-		'screen-saver-mode-label': 'スクリーンセーバーモード',
+-		'inverted-label': '白黒反転',
+-		'power-management-header': '電源管理',
+-		'turn-off-when-suspended': 'サスペンド中OFFにする',
+-		'input-history-label': '入力履歴',
+-		'display-state': {
+-			disabled: '無効',
+-			enabled: '有効',
+-		},
++                'screen-saver-mode-label': 'スクリーンセーバーモード',
++                'inverted-label': '白黒反転',
++                'power-management-header': '電源管理',
++                'turn-off-when-suspended': 'サスペンド中OFFにする',
++                'disable-when-p5general': 'P5GeneralモードではOLEDを無効化',
++                'p5general-oled-safe-mode': 'P5General時はOLED更新を抑制（安全策）',
++                'p5general-oled-mode': 'P5General用 OLED 間引き設定',
++                'p5general-oled-mode-help':
++                        'PS5（Besavior/P5General）利用時に、OLED更新をどの程度間引くかを選びます。値が低いほどI2Cの占有時間が短くなり、入力遅延を抑えやすくなります。各モードは下記の通りで、数値はおおよその目安です。',
++                'p5general-oled-mode-descriptions': {
++                        safe: 'バランス: 約32msごとにページ分割で送信し、表示の滑らかさと入力優先のバランスを狙います。"安全策"オン時はさらに余裕を持たせ、PS5で引っかかりが出たときの初手におすすめ。',
++                        low: 'Low: もっとも控えめ。約120msごとに1ページずつ送信するため、I2C占有時間を最小化しつつ最低限の状態表示だけを維持。遅延が気になるときの安全重視向け。',
++                        medium: 'Medium: 既定値。約64msごとに2ページ送信し、負荷を抑えつつ入力遅延を感じにくい更新速度を維持。通常運用の推奨値。',
++                        high: 'High: 最速。約32msごとに最大4ページ送信して描画を優先。I2C負荷が最も高くなるため、PS5で遅延を感じたらMedium以下に下げてください。',
++                },
++                'input-history-label': '入力履歴',
++                'display-state': {
++                        disabled: '無効',
++                        enabled: '有効',
++                },
+ 		'flip-display': {
+ 			none: '無し',
+ 			flip: '180度回転',
+diff --git a/www/src/Locales/ja-JP/LayoutConfig.jsx b/www/src/Locales/ja-JP/LayoutConfig.jsx
+index ba56cb5a..3806be34 100644
+--- a/www/src/Locales/ja-JP/LayoutConfig.jsx
++++ b/www/src/Locales/ja-JP/LayoutConfig.jsx
+@@ -31,10 +31,11 @@ export default {
+ 			BUTTON_LAYOUT_GITADORA_STRUM_A: 'ギタドラ ストラム',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_A: 'ボード標準',
+ 			BUTTON_LAYOUT_CUSTOMA: 'カスタム',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD (左側)',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button (左側)',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky (左側)',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'ボード専用設定０',
++                     BUTTON_LAYOUT_6GAWD_A: '6GAWD (左側)',
++                     BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button (左側)',
++                     BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky (左側)',
++                     BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                     BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'ボード専用設定０',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: 'ボード専用設定１',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: 'ボード専用設定２',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: 'ボード専用設定３',
+@@ -76,10 +77,11 @@ export default {
+ 			BUTTON_LAYOUT_GITADORA_STRUM_B: 'ギタドラ ストラム',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_B: 'ボード標準',
+ 			BUTTON_LAYOUT_CUSTOMB: 'カスタム',
+-			BUTTON_LAYOUT_6GAWD_B: '6GAWD (右側)',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button (右側)',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky (右側)',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'ボード専用設定０',
++                     BUTTON_LAYOUT_6GAWD_B: '6GAWD (右側)',
++                     BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button (右側)',
++                     BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky (右側)',
++                     BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                     BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'ボード専用設定０',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: 'ボード専用設定１',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: 'ボード専用設定２',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: 'ボード専用設定３',
+diff --git a/www/src/Locales/ja-JP/LedConfig.jsx b/www/src/Locales/ja-JP/LedConfig.jsx
+index d9a7d49d..85f26b95 100644
+--- a/www/src/Locales/ja-JP/LedConfig.jsx
++++ b/www/src/Locales/ja-JP/LedConfig.jsx
+@@ -33,14 +33,43 @@ export default {
+ 	},
+ 	'pled-pin-label': 'PLED #{{pin}} GPIO 端子',
+ 	'pled-index-label': 'PLED #{{index}} インデックス',
+-	'rgb-order': {
+-		'header-text': 'RGB LED ボタン順序',
+-		'sub-header-text':
+-			'ここではどのボタンにRGB LEDが実装されているか及び制御基板からどの順序で配線されているかを設定できます。この設定は一部のLEDアニメーションや静的テーマの機能で利用されます。',
+-		'sub-header1-text':
+-			'アイテムをドラッグ＆ドロップで順序変更してRGB LEDの有効化と順序を設定してください。',
+-		'available-header-text': '利用可能ボタン',
+-		'assigned-header-text': '割当済みボタン',
+-	},
+-	'turn-off-when-suspended': 'サスペンド中はオフにする',
++        'rgb-order': {
++                'header-text': 'RGB LED ボタン順序',
++                'sub-header-text':
++                        'ここではどのボタンにRGB LEDが実装されているか及び制御基板からどの順序で配線されているかを設定できます。この設定は一部のLEDアニメーションや静的テーマの機能で利用されます。',
++                'sub-header1-text':
++                        'アイテムをドラッグ＆ドロップで順序変更してRGB LEDの有効化と順序を設定してください。',
++                'available-header-text': '利用可能ボタン',
++                'assigned-header-text': '割当済みボタン',
++        },
++        'turn-off-when-suspended': 'サスペンド中はオフにする',
++        grid: {
++                'header-text': 'グリッドグラデーションプリセット',
++                'sub-header-text':
++                        '内蔵のグリッドグラデーションアニメーションプリセットを設定します。これらの色とインデックスはコントローラーに保存され、通常のLEDアニメーションのホットキーで切り替えできます。',
++                'gradient-a': 'グラデーションカラーA',
++                'gradient-b': 'グラデーションカラーB',
++                'gradient-c': 'グラデーションカラーC',
++                'gradient-d': 'グラデーションカラーD',
++                'button-press': 'ボタン押下カラー',
++                'lever-normal': 'レバー通常カラー',
++                'lever-press': 'レバー押下カラー',
++                'case-normal': 'ケース通常カラー',
++                'case-press': 'ケースレバー押下カラー',
++                'speed-label': 'グラデーション速度',
++                'preset-label': 'グリッドレイアウトプリセット',
++                'preset-a': 'プリセットA: レバー別色＋11ボタンレイアウト',
++                'preset-b': 'プリセットB: レバーとボタンの7×4グリッド',
++                'speed-very-slow': 'とても遅い',
++                'speed-slow': '遅い',
++                'speed-normal': '普通',
++                'speed-fast': '速い',
++                'speed-very-fast': 'とても速い',
++                'case-help-text':
++                        'ケースLEDインデックスはケースRGB開始位置からのオフセットです。空欄の場合はその方向のLEDをスキップします。',
++                'case-up-label': '上方向のケースLED',
++                'case-down-label': '下方向のケースLED',
++                'case-right-label': '右方向のケースLED',
++                'case-left-label': '左方向のケースLED',
++        },
+ };
+diff --git a/www/src/Locales/ko-KR/DisplayConfig.jsx b/www/src/Locales/ko-KR/DisplayConfig.jsx
+index 8eb7a097..f4e760cc 100644
+--- a/www/src/Locales/ko-KR/DisplayConfig.jsx
++++ b/www/src/Locales/ko-KR/DisplayConfig.jsx
+@@ -40,12 +40,14 @@ export default {
+ 		'splash-mode-label': '스플래시 모드',
+ 		'splash-duration-label': '스플래시 표시 시간 (초, 항상표시는 0)',
+ 		'display-saver-timeout-label': '화면 보호기 동작 시간 (분, 꺼짐은 0)',
+-		'screen-saver-mode-label': '화면 보호기 모드',
+-		'inverted-label': '반전',
+-		'power-management-header': '전원 관리',
+-		'turn-off-when-suspended': '대기모드에서 끄기',
+-		'input-history-label': '입력 기록',
+-		'display-state': {
++                'screen-saver-mode-label': '화면 보호기 모드',
++                'inverted-label': '반전',
++                'power-management-header': '전원 관리',
++                'turn-off-when-suspended': '대기모드에서 끄기',
++                'disable-when-p5general': 'P5General 모드에서 OLED 비활성화',
++                'p5general-oled-safe-mode': 'P5General에서 OLED 새로고침 줄이기(안전)',
++                'input-history-label': '입력 기록',
++                'display-state': {
+ 			disabled: '사용안함',
+ 			enabled: '사용',
+ 		},
+diff --git a/www/src/Locales/ko-KR/LayoutConfig.jsx b/www/src/Locales/ko-KR/LayoutConfig.jsx
+index 48ba481b..4c551b6c 100644
+--- a/www/src/Locales/ko-KR/LayoutConfig.jsx
++++ b/www/src/Locales/ko-KR/LayoutConfig.jsx
+@@ -36,10 +36,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMA: '사용자',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_A: 'GH/RB 프렛',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_A: 'GH/RB 스트럼',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD 왼쪽',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD 전제 버튼 왼쪽',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD 전체 버튼 및 새끼 손가락 왼쪽',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: '보드 설정값 대체 0',
++                        BUTTON_LAYOUT_6GAWD_A: '6GAWD 왼쪽',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD 전제 버튼 왼쪽',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD 전체 버튼 및 새끼 손가락 왼쪽',
++                        BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: '보드 설정값 대체 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: '보드 설정값 대체 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: '보드 설정값 대체 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: '보드 설정값 대체 3',
+@@ -87,10 +88,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMB: '커스텀',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_B: 'GH/RB 프렛',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_B: 'GH/RB 스트럼',
+-			BUTTON_LAYOUT_6GAWD_B: '6GAWD 오른쪽',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD 전제 버튼 오른쪽',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD 전체 버튼 및 새끼 손가락 오른쪽',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: '보드 설정값 대체 0',
++                        BUTTON_LAYOUT_6GAWD_B: '6GAWD 오른쪽',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD 전제 버튼 오른쪽',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD 전체 버튼 및 새끼 손가락 오른쪽',
++                        BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: '보드 설정값 대체 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: '보드 설정값 대체 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: '보드 설정값 대체 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: '보드 설정값 대체 3',
+diff --git a/www/src/Locales/pt-BR/DisplayConfig.jsx b/www/src/Locales/pt-BR/DisplayConfig.jsx
+index f9caafbd..d882873a 100644
+--- a/www/src/Locales/pt-BR/DisplayConfig.jsx
++++ b/www/src/Locales/pt-BR/DisplayConfig.jsx
+@@ -29,9 +29,11 @@ export default {
+ 		'button-layout-custom-button-radius-label': 'Raio dos Botões',
+ 		'button-layout-custom-button-padding-label': 'Preenchimento dos Botões',
+ 		'splash-mode-label': 'Modo de Splash',
+-		'splash-duration-label':
+-			'Duração do Splash (segundos, 0 para sempre ligado)',
+-		'display-saver-timeout-label': 'Tempo Limite do Protetor de Tela (minutos)',
+-		'inverted-label': 'Invertido',
+-	},
++                'splash-duration-label':
++                        'Duração do Splash (segundos, 0 para sempre ligado)',
++                'display-saver-timeout-label': 'Tempo Limite do Protetor de Tela (minutos)',
++                'inverted-label': 'Invertido',
++                'disable-when-p5general': 'Desativar OLED no modo P5General',
++                'p5general-oled-safe-mode': 'Reduzir atualização do OLED no P5General (mais seguro)',
++        },
+ };
+diff --git a/www/src/Locales/tr-TR/DisplayConfig.jsx b/www/src/Locales/tr-TR/DisplayConfig.jsx
+index 12b578f7..de354d79 100644
+--- a/www/src/Locales/tr-TR/DisplayConfig.jsx
++++ b/www/src/Locales/tr-TR/DisplayConfig.jsx
+@@ -40,12 +40,14 @@ export default {
+ 		'splash-mode-label': 'Sıçrama Modu',
+ 		'splash-duration-label': 'Sıçrama Süresi (saniye, Her Zaman Açık için 0)',
+ 		'display-saver-timeout-label': 'Ekran Tasarrufu Zaman Aşımı (dakika, Kapalı için 0)',
+-		'screen-saver-mode-label': 'Ekran Tasarruf Modu',
+-		'inverted-label': 'Ters çevrilmiş',
+-		'power-management-header': 'Güç Yönetimi',
+-		'turn-off-when-suspended': 'Askıya Alındığında Kapat',
+-		'input-history-label': 'Tuş Geçmişi',
+-		'display-state': {
++                'screen-saver-mode-label': 'Ekran Tasarruf Modu',
++                'inverted-label': 'Ters çevrilmiş',
++                'power-management-header': 'Güç Yönetimi',
++                'turn-off-when-suspended': 'Askıya Alındığında Kapat',
++                'disable-when-p5general': 'P5General modunda OLED devre dışı',
++                'p5general-oled-safe-mode': 'P5General için OLED yenilemeyi azalt (daha güvenli)',
++                'input-history-label': 'Tuş Geçmişi',
++                'display-state': {
+ 			disabled: 'Devre dışı',
+ 			enabled: 'Etkin',
+ 		},
+diff --git a/www/src/Locales/tr-TR/LayoutConfig.jsx b/www/src/Locales/tr-TR/LayoutConfig.jsx
+index cfb835c7..7e07134f 100644
+--- a/www/src/Locales/tr-TR/LayoutConfig.jsx
++++ b/www/src/Locales/tr-TR/LayoutConfig.jsx
+@@ -36,10 +36,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMA: 'Özel A',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_A: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_A: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD Left',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button Left',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky Left',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Karta Tanımlı Alternatif 0',
++                        BUTTON_LAYOUT_6GAWD_A: '6GAWD Left',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button Left',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky Left',
++                        BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Karta Tanımlı Alternatif 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: 'Karta Tanımlı Alternatif 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: 'Karta Tanımlı Alternatif 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: 'Karta Tanımlı Alternatif 3',
+@@ -86,9 +87,10 @@ export default {
+ 			BUTTON_LAYOUT_BANDHERO_FRET_B: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_B: 'GH/RB Strum',
+ 			BUTTON_LAYOUT_6GAWD_B: '6GAWD Right',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button Right',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky Right',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Karta Tanımlı Alternatif 0',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button Right',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky Right',
++                        BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Karta Tanımlı Alternatif 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: 'Karta Tanımlı Alternatif 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: 'Karta Tanımlı Alternatif 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: 'Karta Tanımlı Alternatif 3',
+diff --git a/www/src/Locales/zh-CN/DisplayConfig.jsx b/www/src/Locales/zh-CN/DisplayConfig.jsx
+index 71d13b20..e09a7fcf 100644
+--- a/www/src/Locales/zh-CN/DisplayConfig.jsx
++++ b/www/src/Locales/zh-CN/DisplayConfig.jsx
+@@ -37,12 +37,14 @@ export default {
+ 		'splash-mode-label': '启动画面模式',
+ 		'splash-duration-label': '启动画面持续时间（秒，0 = 常亮）',
+ 		'display-saver-timeout-label': '屏幕保护超时（分钟，0 = 关闭）',
+-		'screen-saver-mode-label': '屏幕保护模式',
+-		'inverted-label': '反色',
+-		'power-management-header': '电源管理',
+-		'turn-off-when-suspended': '挂起时关闭显示',
+-		'input-history-label': '输入历史',
+-		'display-state': {
++                'screen-saver-mode-label': '屏幕保护模式',
++                'inverted-label': '反色',
++                'power-management-header': '电源管理',
++                'turn-off-when-suspended': '挂起时关闭显示',
++                'disable-when-p5general': 'P5General 模式下禁用 OLED',
++                'p5general-oled-safe-mode': 'P5General 模式下降低 OLED 刷新（更安全）',
++                'input-history-label': '输入历史',
++                'display-state': {
+ 			disabled: '禁用',
+ 			enabled: '启用',
+ 		},
+diff --git a/www/src/Locales/zh-CN/LayoutConfig.jsx b/www/src/Locales/zh-CN/LayoutConfig.jsx
+index ff849801..daf6930b 100644
+--- a/www/src/Locales/zh-CN/LayoutConfig.jsx
++++ b/www/src/Locales/zh-CN/LayoutConfig.jsx
+@@ -36,10 +36,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMA: 'Custom',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_A: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_A: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_A: '6GAWD Left',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button Left',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky Left',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Board Defined Alternate 0',
++                        BUTTON_LAYOUT_6GAWD_A: '6GAWD Left',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_A: '6GAWD All Button Left',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_A: '6GAWD All Button Pinky Left',
++                        BUTTON_LAYOUT_STICK_11BUTTONS: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_A: 'Board Defined Alternate 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_A: 'Board Defined Alternate 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_A: 'Board Defined Alternate 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_A: 'Board Defined Alternate 3',
+@@ -87,10 +88,11 @@ export default {
+ 			BUTTON_LAYOUT_CUSTOMB: 'Custom',
+ 			BUTTON_LAYOUT_BANDHERO_FRET_B: 'GH/RB Fret',
+ 			BUTTON_LAYOUT_BANDHERO_STRUM_B: 'GH/RB Strum',
+-			BUTTON_LAYOUT_6GAWD_B: '6GAWD Right',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button Right',
+-			BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky Right',
+-			BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Board Defined Alternate 0',
++                        BUTTON_LAYOUT_6GAWD_B: '6GAWD Right',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTON_B: '6GAWD All Button Right',
++                        BUTTON_LAYOUT_6GAWD_ALLBUTTONPLUS_B: '6GAWD All Button Pinky Right',
++                        BUTTON_LAYOUT_STICK_11BUTTONS_B: 'Stick & 11Buttons',
++                        BUTTON_LAYOUT_BOARD_DEFINED_ALT0_B: 'Board Defined Alternate 0',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT1_B: 'Board Defined Alternate 1',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT2_B: 'Board Defined Alternate 2',
+ 			BUTTON_LAYOUT_BOARD_DEFINED_ALT3_B: 'Board Defined Alternate 3',
+diff --git a/www/src/Pages/DisplayConfig.jsx b/www/src/Pages/DisplayConfig.jsx
+index de0e1721..c6cb2b27 100644
+--- a/www/src/Pages/DisplayConfig.jsx
++++ b/www/src/Pages/DisplayConfig.jsx
+@@ -30,13 +30,22 @@ const DISPLAY_FLIP_MODES = [
+ ];
+ 
+ const DISPLAY_SAVER_MODES = [
+-	{ label: 'form.saver-modes.display-off', value: 0 },
+-	{ label: 'form.saver-modes.snow', value: 1 },
+-	{ label: 'form.saver-modes.bounce', value: 2 },
+-	{ label: 'form.saver-modes.pipes', value: 3 },
+-	{ label: 'form.saver-modes.toast', value: 4 },
++        { label: 'form.saver-modes.display-off', value: 0 },
++        { label: 'form.saver-modes.snow', value: 1 },
++        { label: 'form.saver-modes.bounce', value: 2 },
++        { label: 'form.saver-modes.pipes', value: 3 },
++        { label: 'form.saver-modes.toast', value: 4 },
+ ];
+ 
++const P5G_OLED_MODES = [
++        { label: 'form.p5general-oled-mode.safe', value: 0 },
++        { label: 'form.p5general-oled-mode.low', value: 1 },
++        { label: 'form.p5general-oled-mode.medium', value: 2 },
++        { label: 'form.p5general-oled-mode.high', value: 3 },
++];
++
++const P5G_OLED_MODE_DESCRIPTION_KEYS = ['safe', 'low', 'medium', 'high'];
++
+ const LAYOUT_ORIENTATION = [
+ 	{ label: 'form.layout-modes.standard', value: 0 },
+ 	{ label: 'form.layout-modes.southpaw', value: 1 },
+@@ -78,10 +87,13 @@ const defaultValues = {
+ 	macroMode: true,
+ 	profileMode: false,
+ 	inputHistoryEnabled: false,
+-	inputHistoryLength: 21,
+-	inputHistoryCol: 0,
+-	inputHistoryRow: 7,
+-	turnOffWhenSuspended: 0,
++        inputHistoryLength: 21,
++        inputHistoryCol: 0,
++        inputHistoryRow: 7,
++        turnOffWhenSuspended: 0,
++        disableWhenP5General: 0,
++        p5GeneralOledSafeMode: 1,
++        p5GeneralOledMode: 2,
+ };
+ 
+ let buttonLayoutDefinitions = { buttonLayout: {}, buttonLayoutRight: {} };
+@@ -102,14 +114,17 @@ const schema = yup.object().shape({
+ 		.number()
+ 		.oneOf(DISPLAY_FLIP_MODES.map((o) => o.value))
+ 		.label('Flip Display'),
+-	invertDisplay: yup
+-		.number()
+-		.oneOf(ON_OFF_OPTIONS.map((o) => o.value))
+-		.label('Invert Display'),
+-	turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
+-	buttonLayout: buttonLayoutSchema,
+-	buttonLayoutRight: buttonLayoutRightSchema,
+-	buttonLayoutOrientation: yup.number().label('Layout Reversed'),
++        invertDisplay: yup
++                .number()
++                .oneOf(ON_OFF_OPTIONS.map((o) => o.value))
++                .label('Invert Display'),
++        turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
++        disableWhenP5General: yup.number().label('Disable in P5General'),
++        p5GeneralOledSafeMode: yup.number().label('Reduce OLED refresh in P5General'),
++        p5GeneralOledMode: yup.number().label('P5General OLED update rate'),
++        buttonLayout: buttonLayoutSchema,
++        buttonLayoutRight: buttonLayoutRightSchema,
++        buttonLayoutOrientation: yup.number().label('Layout Reversed'),
+ 	splashMode: yup
+ 		.number()
+ 		.required()
+@@ -344,25 +359,86 @@ export default function DisplayConfigPage() {
+ 												<label className="form-label">
+ 													{t('DisplayConfig:form.power-management-header')}
+ 												</label>
+-												<Form.Check
+-													label={t(
+-														'DisplayConfig:form.turn-off-when-suspended',
+-													)}
+-													type="switch"
+-													name="turnOffWhenSuspended"
+-													className="align-middle"
+-													isInvalid={false}
+-													checked={Boolean(values.turnOffWhenSuspended)}
+-													onChange={(e) => {
+-														setFieldValue(
+-															'turnOffWhenSuspended',
+-															e.target.checked ? 1 : 0,
+-														);
+-													}}
+-												/>
+-											</div>
+-										</Row>
+-									</Tab>
++                                                                                                <Form.Check
++                                                                                                        label={t(
++                                                                                                                'DisplayConfig:form.turn-off-when-suspended',
++                                                                                                        )}
++                                                                                                        type="switch"
++                                                                                                        name="turnOffWhenSuspended"
++                                                                                                        className="align-middle"
++                                                                                                        isInvalid={false}
++                                                                                                        checked={Boolean(values.turnOffWhenSuspended)}
++                                                                                                        onChange={(e) => {
++                                                                                                                setFieldValue(
++                                                                                                                        'turnOffWhenSuspended',
++                                                                                                                        e.target.checked ? 1 : 0,
++                                                                                                                );
++                                                                                                        }}
++                                                                                                />
++                                                                                                <Form.Check
++                                                                                                        label={t(
++                                                                                                                'DisplayConfig:form.disable-when-p5general',
++                                                                                                        )}
++                                                                                                        type="switch"
++                                                                                                        name="disableWhenP5General"
++                                                                                                        className="align-middle"
++                                                                                                        isInvalid={false}
++                                                                                                        checked={Boolean(values.disableWhenP5General)}
++                                                                                                        onChange={(e) => {
++                                                                                                                setFieldValue(
++                                                                                                                        'disableWhenP5General',
++                                                                                                                        e.target.checked ? 1 : 0,
++                                                                                                                );
++                                                                                                        }}
++                                                                                                />
++                                                                                                <Form.Check
++                                                                                                        label={t(
++                                                                                                                'DisplayConfig:form.p5general-oled-safe-mode',
++                                                                                                        )}
++                                                                                                        type="switch"
++                                                                                                        name="p5GeneralOledSafeMode"
++                                                                                                        className="align-middle"
++                                                                                                        isInvalid={false}
++                                                                                                        checked={Boolean(values.p5GeneralOledSafeMode)}
++                                                                                                        onChange={(e) => {
++                                                                                                                setFieldValue(
++                                                                                                                        'p5GeneralOledSafeMode',
++                                                                                                                        e.target.checked ? 1 : 0,
++                                                                                                                );
++                                                                                                        }}
++                                                                                                />
++                                                                                                <FormSelect
++                                                                                                        label={t('DisplayConfig:form.p5general-oled-mode')}
++                                                                                                        name="p5GeneralOledMode"
++                                                                                                        className="form-select-sm"
++                                                                                                        groupClassName="col-sm-6 mb-3"
++                                                                                                        value={values.p5GeneralOledMode}
++                                                                                                        error={errors.p5GeneralOledMode}
++                                                                                                        isInvalid={errors.p5GeneralOledMode}
++                                                                                                        onChange={handleChange}
++                                                                                                >
++                                                                                                        {P5G_OLED_MODES.map((o) => (
++                                                                                                                <option key={`oled-mode-${o.value}`} value={o.value}>
++                                                                                                                        {t(`DisplayConfig:${o.label}`)}
++                                                                                                                </option>
++                                                                                                        ))}
++                                                                                                </FormSelect>
++                                                                                                <p className="text-body-secondary small mb-1">
++                                                                                                        {t('DisplayConfig:form.p5general-oled-mode-help')}
++                                                                                                </p>
++                                                                                                <ul className="text-body-secondary small">
++                                                                                                        {P5G_OLED_MODE_DESCRIPTION_KEYS.map((key, index) => (
++                                                                                                                <li
++                                                                                                                        key={`p5g-oled-mode-desc-${key}`}
++                                                                                                                        className={index === P5G_OLED_MODE_DESCRIPTION_KEYS.length - 1 ? 'mb-0' : ''}
++                                                                                                                >
++                                                                                                                        {t(`DisplayConfig:form.p5general-oled-mode-descriptions.${key}`)}
++                                                                                                                </li>
++                                                                                                        ))}
++                                                                                                </ul>
++                                                                                        </div>
++                                                                                </Row>
++                                                                        </Tab>
+ 									<Tab
+ 										key="displayLayoutOptions"
+ 										eventKey="displayLayoutOptions"
+diff --git a/www/src/Pages/LEDConfigPage.jsx b/www/src/Pages/LEDConfigPage.jsx
+index a67ec9cf..9544ab8b 100644
+--- a/www/src/Pages/LEDConfigPage.jsx
++++ b/www/src/Pages/LEDConfigPage.jsx
+@@ -37,32 +37,55 @@ const PLED_LABELS = [
+ ];
+ 
+ const CASE_TYPE = [
+-	{ value: -1, label: 'Off' },
+-	{ value: 0, label: 'Ambient' },
+-	{ value: 1, label: 'Linked' },
++        { value: -1, label: 'Off' },
++        { value: 0, label: 'Ambient' },
++        { value: 1, label: 'Linked' },
++];
++
++const GRID_GRADIENT_SPEED = [
++        { value: 0, label: 'very-slow' },
++        { value: 1, label: 'slow' },
++        { value: 2, label: 'normal' },
++        { value: 3, label: 'fast' },
++        { value: 4, label: 'very-fast' },
+ ];
+ 
+ const defaultValue = {
+-	brightnessMaximum: 255,
+-	brightnessSteps: 5,
+-	dataPin: -1,
+-	ledFormat: 0,
+-	ledLayout: 0,
+-	ledsPerButton: 2,
+-	pledType: -1,
+-	pledPin1: -1,
+-	pledPin2: -1,
+-	pledPin3: -1,
+-	pledPin4: -1,
+-	pledIndex1: -1,
+-	pledIndex2: -1,
+-	pledIndex3: -1,
+-	pledIndex4: -1,
+-	pledColor: '#00ff00',
+-	caseRGBType: 0,
+-	caseRGBIndex: -1,
+-	caseRGBCount: 0,
+-	ledButtonMap: {},
++        brightnessMaximum: 255,
++        brightnessSteps: 5,
++        dataPin: -1,
++        ledFormat: 0,
++        ledLayout: 0,
++        ledsPerButton: 2,
++        pledType: -1,
++        pledPin1: -1,
++        pledPin2: -1,
++        pledPin3: -1,
++        pledPin4: -1,
++        pledIndex1: -1,
++        pledIndex2: -1,
++        pledIndex3: -1,
++        pledIndex4: -1,
++        pledColor: '#00ff00',
++        caseRGBType: 0,
++        caseRGBIndex: -1,
++        caseRGBCount: 0,
++        ledButtonMap: {},
++        gridGradientColorA: '#0000ff',
++        gridGradientColorB: '#ff00ff',
++        gridGradientColorC: '#00ffff',
++        gridGradientColorD: '#ffff00',
++        gridButtonPressColor: '#ffffff',
++        gridGradientSpeed: 2,
++        gridGradientPreset: 0,
++        gridLeverNormalColor: '#202020',
++        gridLeverPressColor: '#00ffff',
++        gridCaseNormalColor: '#000000',
++        gridCaseLeverPressColor: '#ff8000',
++        gridCaseUpIndices: ['', '', '', ''],
++        gridCaseDownIndices: ['', '', '', ''],
++        gridCaseRightIndices: ['', '', '', ''],
++        gridCaseLeftIndices: ['', '', '', ''],
+ };
+ 
+ const schema = yup.object().shape({
+@@ -142,16 +165,35 @@ const schema = yup.object().shape({
+ 		.validateMinWhenEqualTo('pledType', 1, 0),
+ 	turnOffWhenSuspended: yup.number().label('Turn Off When Suspended'),
+ 	caseRGBType: yup.number().required().label('Case RGB Type'),
+-	caseRGBCount: yup
+-		.number()
+-		.required()
+-		.positive()
+-		.integer()
+-		.min(0)
+-		.max(100)
+-		.label('Case RGB Count'),
+-	caseRGBIndex: yup.number().label('Case RGB Index').min(-1).max(100),
+-	ledButtonMap: yup.object(),
++        caseRGBCount: yup
++                .number()
++                .required()
++                .positive()
++                .integer()
++                .min(0)
++                .max(100)
++                .label('Case RGB Count'),
++        caseRGBIndex: yup.number().label('Case RGB Index').min(-1).max(100),
++        ledButtonMap: yup.object(),
++        gridGradientColorA: yup.string().label('Grid Color A').validateColor(),
++        gridGradientColorB: yup.string().label('Grid Color B').validateColor(),
++        gridGradientColorC: yup.string().label('Grid Color C').validateColor(),
++        gridGradientColorD: yup.string().label('Grid Color D').validateColor(),
++        gridButtonPressColor: yup.string().label('Grid Press Color').validateColor(),
++        gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(4),
++        gridGradientPreset: yup
++                .number()
++                .label('Grid Layout Preset')
++                .min(0)
++                .max(1),
++        gridLeverNormalColor: yup.string().label('Lever Color').validateColor(),
++        gridLeverPressColor: yup.string().label('Lever Press Color').validateColor(),
++        gridCaseNormalColor: yup.string().label('Case Color').validateColor(),
++        gridCaseLeverPressColor: yup.string().label('Case Press Color').validateColor(),
++        gridCaseUpIndices: yup.array().of(yup.number().integer().min(0).nullable()),
++        gridCaseDownIndices: yup.array().of(yup.number().integer().min(0).nullable()),
++        gridCaseRightIndices: yup.array().of(yup.number().integer().min(0).nullable()),
++        gridCaseLeftIndices: yup.array().of(yup.number().integer().min(0).nullable()),
+ });
+ 
+ const createDataSource = (ledButtonMap, buttonLabelType, swapTpShareLabels) => {
+@@ -185,13 +227,28 @@ const getLedButtons = (buttonLabels, map, excludeNulls, swapTpShareLabels) => {
+ };
+ 
+ const createLedMap = (ledButtons, clear) => {
+-	if (!ledButtons) return;
+-	return ledButtons.reduce(
+-		(acc, btn, index) => ({ ...acc, [btn.id]: clear ? null : index }),
+-		{},
+-	);
++        if (!ledButtons) return;
++        return ledButtons.reduce(
++                (acc, btn, index) => ({ ...acc, [btn.id]: clear ? null : index }),
++                {},
++        );
++};
++
++const ensureIndexArray = (arr) => {
++        const padded = [...(arr || [])];
++        while (padded.length < 4) padded.push('');
++        return padded.slice(0, 4).map((v) => (v === null || typeof v === 'undefined' ? '' : v));
+ };
+ 
++const sanitizeIndexArray = (arr) =>
++        (arr || [])
++                .map((value) => {
++                        if (value === '' || value === null || typeof value === 'undefined') return null;
++                        const parsed = parseInt(value);
++                        return Number.isNaN(parsed) || parsed < 0 ? null : parsed;
++                })
++                .filter((v) => v !== null);
++
+ const FormContext = ({
+ 	buttonLabelType,
+ 	ledButtonMap,
+@@ -203,17 +260,23 @@ const FormContext = ({
+ 
+ 	useEffect(() => {
+ 		async function fetchData() {
+-			const data = await WebApi.getLedOptions(setLoading);
+-			const dataSources = createDataSource(
+-				data.ledButtonMap,
+-				buttonLabelType,
+-				swapTpShareLabels,
+-			);
+-			setDataSources(dataSources);
+-			setValues(data);
+-		}
+-		fetchData();
+-	}, []);
++                        const data = await WebApi.getLedOptions(setLoading);
++                        const dataSources = createDataSource(
++                                data.ledButtonMap,
++                                buttonLabelType,
++                                swapTpShareLabels,
++                        );
++                        setDataSources(dataSources);
++                        setValues({
++                                ...data,
++                                gridCaseUpIndices: ensureIndexArray(data.gridCaseUpIndices),
++                                gridCaseDownIndices: ensureIndexArray(data.gridCaseDownIndices),
++                                gridCaseRightIndices: ensureIndexArray(data.gridCaseRightIndices),
++                                gridCaseLeftIndices: ensureIndexArray(data.gridCaseLeftIndices),
++                        });
++                }
++                fetchData();
++        }, []);
+ 
+ 	useEffect(() => {
+ 		const dataSources = createDataSource(
+@@ -228,12 +291,13 @@ const FormContext = ({
+ };
+ 
+ export default function LEDConfigPage() {
+-	const { buttonLabels, updateUsedPins } = useContext(AppContext);
+-	const [saveMessage, setSaveMessage] = useState('');
+-	const [dataSources, setDataSources] = useState([[], []]);
+-	const [colorPickerTarget, setColorPickerTarget] = useState(null);
+-	const [showPicker, setShowPicker] = useState(false);
+-	const [rgbLedStartIndex, setRgbLedStartIndex] = useState(0);
++        const { buttonLabels, updateUsedPins } = useContext(AppContext);
++        const [saveMessage, setSaveMessage] = useState('');
++        const [dataSources, setDataSources] = useState([[], []]);
++        const [colorPickerTarget, setColorPickerTarget] = useState(null);
++        const [colorPickerName, setColorPickerName] = useState(null);
++        const [showPicker, setShowPicker] = useState(false);
++        const [rgbLedStartIndex, setRgbLedStartIndex] = useState(0);
+ 
+ 	const { buttonLabelType, swapTpShareLabels } = buttonLabels;
+ 
+@@ -245,9 +309,15 @@ export default function LEDConfigPage() {
+ 		p[1] = t(`LedConfig:pled-index-label`, { index: n });
+ 	});
+ 
+-	CASE_TYPE[0].label = t(`LedConfig:case.case-type-off`);
+-	CASE_TYPE[1].label = t(`LedConfig:case.case-type-ambient`);
+-	CASE_TYPE[2].label = t(`LedConfig:case.case-type-linked`);
++        CASE_TYPE[0].label = t(`LedConfig:case.case-type-off`);
++        CASE_TYPE[1].label = t(`LedConfig:case.case-type-ambient`);
++        CASE_TYPE[2].label = t(`LedConfig:case.case-type-linked`);
++
++        GRID_GRADIENT_SPEED[0].label = t(`LedConfig:grid.speed-very-slow`);
++        GRID_GRADIENT_SPEED[1].label = t(`LedConfig:grid.speed-slow`);
++        GRID_GRADIENT_SPEED[2].label = t(`LedConfig:grid.speed-normal`);
++        GRID_GRADIENT_SPEED[3].label = t(`LedConfig:grid.speed-fast`);
++        GRID_GRADIENT_SPEED[4].label = t(`LedConfig:grid.speed-very-fast`);
+ 
+ 	const ledOrderChanged = (setFieldValue, ledOrderArrays, ledsPerButton) => {
+ 		if (ledOrderArrays.length === 2) {
+@@ -259,23 +329,38 @@ export default function LEDConfigPage() {
+ 		}
+ 	};
+ 
+-	const ledsPerButtonChanged = (e, handleChange) => {
+-		const ledsPerButton = parseInt(e.target.value);
+-		setRgbLedStartIndex(dataSources[1].length * (ledsPerButton || 0));
+-		handleChange(e);
+-	};
++        const ledsPerButtonChanged = (e, handleChange) => {
++                const ledsPerButton = parseInt(e.target.value);
++                setRgbLedStartIndex(dataSources[1].length * (ledsPerButton || 0));
++                handleChange(e);
++        };
+ 
+-	const toggleRgbPledPicker = (e) => {
+-		e.stopPropagation();
+-		setColorPickerTarget(e.target);
+-		setShowPicker(!showPicker);
+-	};
++        const toggleColorPicker = (name, e) => {
++                e.stopPropagation();
++                setColorPickerName(name);
++                setColorPickerTarget(e.target);
++                setShowPicker(name === colorPickerName ? !showPicker : true);
++        };
+ 
+-	const onSuccess = async (values) => {
+-		const data = {
+-			...values,
+-			pledColor: hexToInt(values.pledColor || '#000000'),
+-		};
++        const onSuccess = async (values) => {
++                const data = {
++                        ...values,
++                        pledColor: hexToInt(values.pledColor || '#000000'),
++                        gridGradientColorA: hexToInt(values.gridGradientColorA || '#000000'),
++                        gridGradientColorB: hexToInt(values.gridGradientColorB || '#000000'),
++                        gridGradientColorC: hexToInt(values.gridGradientColorC || '#000000'),
++                        gridGradientColorD: hexToInt(values.gridGradientColorD || '#000000'),
++                        gridButtonPressColor: hexToInt(values.gridButtonPressColor || '#000000'),
++                        gridGradientPreset: parseInt(values.gridGradientPreset || 0),
++                        gridLeverNormalColor: hexToInt(values.gridLeverNormalColor || '#000000'),
++                        gridLeverPressColor: hexToInt(values.gridLeverPressColor || '#000000'),
++                        gridCaseNormalColor: hexToInt(values.gridCaseNormalColor || '#000000'),
++                        gridCaseLeverPressColor: hexToInt(values.gridCaseLeverPressColor || '#000000'),
++                        gridCaseUpIndices: sanitizeIndexArray(values.gridCaseUpIndices),
++                        gridCaseDownIndices: sanitizeIndexArray(values.gridCaseDownIndices),
++                        gridCaseRightIndices: sanitizeIndexArray(values.gridCaseRightIndices),
++                        gridCaseLeftIndices: sanitizeIndexArray(values.gridCaseLeftIndices),
++                };
+ 
+ 		const success = await WebApi.setLedOptions(data);
+ 		if (success) updateUsedPins();
+@@ -589,34 +674,43 @@ export default function LEDConfigPage() {
+ 									min={0}
+ 								/>
+ 								<FormControl
+-									label={t('LedConfig:player.pled-color-label')}
+-									hidden={parseInt(values.pledType) !== 1}
+-									name="pledColor"
+-									className="form-control-sm"
+-									groupClassName="col-sm-2 mb-3"
+-									value={values.pledColor}
+-									error={errors.pledColor}
+-									isInvalid={errors.pledColor}
+-									onBlur={handleBlur}
+-									onClick={toggleRgbPledPicker}
+-									onChange={(e) => {
+-										handleChange(e);
+-										setShowPicker(false);
++                                                                label={t('LedConfig:player.pled-color-label')}
++                                                                hidden={parseInt(values.pledType) !== 1}
++                                                                name="pledColor"
++                                                                className="form-control-sm"
++                                                                groupClassName="col-sm-2 mb-3"
++                                                                value={values.pledColor}
++                                                                error={errors.pledColor}
++                                                                isInvalid={errors.pledColor}
++                                                                onBlur={handleBlur}
++                                                                onClick={(e) => toggleColorPicker('pledColor', e)}
++                                                                onChange={(e) => {
++                                                                        handleChange(e);
++                                                                        setShowPicker(false);
+ 									}}
+ 								/>
+-								<ColorPicker
+-									name="pledColor"
+-									types={[{ value: values.pledColor }]}
+-									onChange={(c) => setFieldValue('pledColor', c)}
+-									onDismiss={() => setShowPicker(false)}
+-									placement="top"
+-									presetColors={LEDColors.map((c) => ({
+-										title: c.name,
+-										color: c.value,
+-									}))}
+-									show={showPicker}
+-									target={colorPickerTarget}
+-								></ColorPicker>
++                                                                <ColorPicker
++                                                                        name={colorPickerName || 'pledColor'}
++                                                                        types={[
++                                                                                {
++                                                                                        value:
++                                                                                                (colorPickerName && values[colorPickerName]) ||
++                                                                                                values.pledColor,
++                                                                                },
++                                                                        ]}
++                                                                        onChange={(c) => {
++                                                                                setFieldValue(colorPickerName || 'pledColor', c);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                        onDismiss={() => setShowPicker(false)}
++                                                                        placement="top"
++                                                                        presetColors={LEDColors.map((c) => ({
++                                                                                title: c.name,
++                                                                                color: c.value,
++                                                                        }))}
++                                                                        show={showPicker}
++                                                                        target={colorPickerTarget}
++                                                                ></ColorPicker>
+ 								<div className="col-sm-3 mb-3">
+ 									<Form.Check
+ 										label={t('LedConfig:turn-off-when-suspended')}
+@@ -636,23 +730,249 @@ export default function LEDConfigPage() {
+ 							<p hidden={parseInt(values.pledType) !== 0}>
+ 								{t('LedConfig:player.pwm-sub-header-text')}
+ 							</p>
+-							<p hidden={parseInt(values.pledType) !== 1}>
+-								<Trans
+-									ns="LedConfig"
+-									i18nKey="player.rgb-sub-header-text"
+-									rgbLedStartIndex={rgbLedStartIndex}
++                                                <p hidden={parseInt(values.pledType) !== 1}>
++                                                        <Trans
++                                                                ns="LedConfig"
++                                                                i18nKey="player.rgb-sub-header-text"
++                                                                rgbLedStartIndex={rgbLedStartIndex}
+ 								>
+ 									For RGB LEDs, the indexes must be after the last LED button
+ 									defined in <em>RGB LED Button Order</em> section and likely{' '}
+ 									<strong>starts at index {{ rgbLedStartIndex }}</strong>.
+-								</Trans>
+-							</p>
+-						</Form.Group>
+-					</Section>
+-					<Section title={t('LedConfig:case.header-text')}>
+-						<Form.Group as={Col}>
+-							<Row>
+-								<FormSelect
++                                                                </Trans>
++                                                        </p>
++                                                </Form.Group>
++                                        </Section>
++                                        <Section title={t('LedConfig:grid.header-text')}>
++                                                <Form.Group as={Col}>
++                                                        <p>{t('LedConfig:grid.sub-header-text')}</p>
++                                                        <Row>
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.gradient-a')}
++                                                                        name="gridGradientColorA"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridGradientColorA}
++                                                                        error={errors.gridGradientColorA}
++                                                                        isInvalid={errors.gridGradientColorA}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridGradientColorA', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.gradient-b')}
++                                                                        name="gridGradientColorB"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridGradientColorB}
++                                                                        error={errors.gridGradientColorB}
++                                                                        isInvalid={errors.gridGradientColorB}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridGradientColorB', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.gradient-c')}
++                                                                        name="gridGradientColorC"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridGradientColorC}
++                                                                        error={errors.gridGradientColorC}
++                                                                        isInvalid={errors.gridGradientColorC}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridGradientColorC', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.gradient-d')}
++                                                                        name="gridGradientColorD"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridGradientColorD}
++                                                                        error={errors.gridGradientColorD}
++                                                                        isInvalid={errors.gridGradientColorD}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridGradientColorD', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.button-press')}
++                                                                        name="gridButtonPressColor"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridButtonPressColor}
++                                                                        error={errors.gridButtonPressColor}
++                                                                        isInvalid={errors.gridButtonPressColor}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridButtonPressColor', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.lever-normal')}
++                                                                        name="gridLeverNormalColor"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridLeverNormalColor}
++                                                                        error={errors.gridLeverNormalColor}
++                                                                        isInvalid={errors.gridLeverNormalColor}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridLeverNormalColor', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.lever-press')}
++                                                                        name="gridLeverPressColor"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridLeverPressColor}
++                                                                        error={errors.gridLeverPressColor}
++                                                                        isInvalid={errors.gridLeverPressColor}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridLeverPressColor', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                        </Row>
++                                                        <Row>
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.case-normal')}
++                                                                        name="gridCaseNormalColor"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridCaseNormalColor}
++                                                                        error={errors.gridCaseNormalColor}
++                                                                        isInvalid={errors.gridCaseNormalColor}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridCaseNormalColor', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormControl
++                                                                        label={t('LedConfig:grid.case-press')}
++                                                                        name="gridCaseLeverPressColor"
++                                                                        className="form-control-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridCaseLeverPressColor}
++                                                                        error={errors.gridCaseLeverPressColor}
++                                                                        isInvalid={errors.gridCaseLeverPressColor}
++                                                                        onBlur={handleBlur}
++                                                                        onClick={(e) => toggleColorPicker('gridCaseLeverPressColor', e)}
++                                                                        onChange={(e) => {
++                                                                                handleChange(e);
++                                                                                setShowPicker(false);
++                                                                        }}
++                                                                />
++                                                                <FormSelect
++                                                                        label={t('LedConfig:grid.speed-label')}
++                                                                        name="gridGradientSpeed"
++                                                                        className="form-select-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridGradientSpeed}
++                                                                        error={errors.gridGradientSpeed}
++                                                                        isInvalid={errors.gridGradientSpeed}
++                                                                        onChange={(e) =>
++                                                                                setFieldValue(
++                                                                                        'gridGradientSpeed',
++                                                                                        parseInt(e.target.value),
++                                                                                )
++                                                                        }
++                                                                >
++                                                                        {GRID_GRADIENT_SPEED.map((o, i) => (
++                                                                                <option key={`grid-speed-${i}`} value={o.value}>
++                                                                                        {o.label}
++                                                                                </option>
++                                                                        ))}
++                                                                </FormSelect>
++                                                                <FormSelect
++                                                                        label={t('LedConfig:grid.preset-label')}
++                                                                        name="gridGradientPreset"
++                                                                        className="form-select-sm"
++                                                                        groupClassName="col-sm-2 mb-3"
++                                                                        value={values.gridGradientPreset}
++                                                                        error={errors.gridGradientPreset}
++                                                                        isInvalid={errors.gridGradientPreset}
++                                                                        onChange={(e) =>
++                                                                                setFieldValue(
++                                                                                        'gridGradientPreset',
++                                                                                        parseInt(e.target.value),
++                                                                                )
++                                                                        }
++                                                                >
++                                                                        <option value={0}>{t('LedConfig:grid.preset-a')}</option>
++                                                                        <option value={1}>{t('LedConfig:grid.preset-b')}</option>
++                                                                </FormSelect>
++                                                        </Row>
++                                                        <p>{t('LedConfig:grid.case-help-text')}</p>
++                                                        <Row>
++                                                                {[{
++                                                                        name: 'gridCaseUpIndices',
++                                                                        label: t('LedConfig:grid.case-up-label'),
++                                                                },
++                                                                {
++                                                                        name: 'gridCaseDownIndices',
++                                                                        label: t('LedConfig:grid.case-down-label'),
++                                                                },
++                                                                {
++                                                                        name: 'gridCaseRightIndices',
++                                                                        label: t('LedConfig:grid.case-right-label'),
++                                                                },
++                                                                {
++                                                                        name: 'gridCaseLeftIndices',
++                                                                        label: t('LedConfig:grid.case-left-label'),
++                                                                }].map((direction, index) => (
++                                                                        <Col sm={6} md={3} key={`grid-case-${index}`} className="mb-3">
++                                                                                <Form.Label>{direction.label}</Form.Label>
++                                                                                {[0, 1, 2, 3].map((slot) => {
++                                                                                        const dirArray = ensureIndexArray(values[direction.name]);
++                                                                                        return (
++                                                                                                <FormControl
++                                                                                                        key={`${direction.name}-${slot}`}
++                                                                                                        type="number"
++                                                                                                        name={`${direction.name}-${slot}`}
++                                                                                                        className="form-control-sm mb-2"
++                                                                                                        value={dirArray[slot]}
++                                                                                                        min={0}
++                                                                                                        onChange={(e) => {
++                                                                                                                const updatedArray = ensureIndexArray(
++                                                                                                                        values[direction.name],
++                                                                                                                );
++                                                                                                                updatedArray[slot] = e.target.value;
++                                                                                                                setFieldValue(direction.name, updatedArray);
++                                                                                                        }}
++                                                                                                />
++                                                                                        );
++                                                                                })}
++                                                                        </Col>
++                                                                ))}
++                                                        </Row>
++                                                </Form.Group>
++                                        </Section>
++                                        <Section title={t('LedConfig:case.header-text')}>
++                                                <Form.Group as={Col}>
++                                                        <Row>
++                                                                <FormSelect
+ 									label={t('LedConfig:case.case-type-label')}
+ 									name="caseRGBType"
+ 									className="form-select-sm"
+diff --git a/www/src/Pages/PinMapping.tsx b/www/src/Pages/PinMapping.tsx
+index 062672dc..de8609ac 100644
+--- a/www/src/Pages/PinMapping.tsx
++++ b/www/src/Pages/PinMapping.tsx
+@@ -81,8 +81,8 @@ const options = Object.entries(BUTTON_ACTIONS)
+ 			type: buttonMask
+ 				? 'customButtonMask'
+ 				: dpadMask
+-					? 'customDpadMask'
+-					: 'action',
++				? 'customDpadMask'
++				: 'action',
+ 			customButtonMask: buttonMask?.value || 0,
+ 			customDpadMask: dpadMask?.value || 0,
+ 		};
+@@ -121,7 +121,7 @@ const getMultiValue = (pinData: MaskPayload) => {
+ 						type === 'customButtonMask') ||
+ 					(pinData.customDpadMask & customDpadMask &&
+ 						type === 'customDpadMask'),
+-			)
++		  )
+ 		: options.filter((option) => option.value === pinData.action);
+ };
+ 
+@@ -146,7 +146,7 @@ const ProfileLabel = memo(function ProfileLabel({
+ 	);
+ 
+ 	return (
+-		<div>
++		<div className="pin-grid">
+ 			<Form.Label>{t('PinMapping:profile-label-title')}</Form.Label>
+ 			<Form.Control
+ 				type="text"
+@@ -337,12 +337,10 @@ const PinSection = memo(function PinSection({
+ 				})}
+ 			>
+ 				<Form onSubmit={handleSubmit}>
+-					<Row>
+-						<Col md={7}>
+-							<ProfileLabel profileIndex={profileIndex} />
+-						</Col>
++					<div className="d-flex justify-content-between">
++						<ProfileLabel profileIndex={profileIndex} />
+ 						{profileIndex > 0 && (
+-							<Col className='order-first order-md-last'>
++							<div className="d-flex">
+ 								<FormCheck
+ 									disabled={profileIndex === activeProfile}
+ 									size={3}
+@@ -369,9 +367,9 @@ const PinSection = memo(function PinSection({
+ 										toggleProfileEnabled(profileIndex);
+ 									}}
+ 								/>
+-							</Col>
++							</div>
+ 						)}
+-					</Row>
++					</div>
+ 					<hr />
+ 
+ 					<PinSelectList profileIndex={profileIndex} />
+diff --git a/www/src/Services/Utilities.ts b/www/src/Services/Utilities.ts
+index ac060148..b2ca6120 100644
+--- a/www/src/Services/Utilities.ts
++++ b/www/src/Services/Utilities.ts
+@@ -5,25 +5,25 @@ const hexToInt = (hex) => {
+ 
+ // Convert a number to hex
+ const intToHex = (d) => {
+-	return ('0' + Number(d).toString(16)).slice(-2).toLowerCase();
++        return ('0' + Number(d).toString(16)).slice(-2).toLowerCase();
+ };
+ 
+ // Convert a 32-bit ARGB value to hex format
+ const rgbIntToHex = (rgbInt) => {
+-	let r = (rgbInt >> 16) & 255;
+-	let g = (rgbInt >> 8) & 255;
+-	let b = (rgbInt >> 0) & 255;
++        const r = (rgbInt >> 16) & 255;
++        const g = (rgbInt >> 8) & 255;
++        const b = (rgbInt >> 0) & 255;
+ 
+ 	return `#${intToHex(r)}${intToHex(g)}${intToHex(b)}`;
+ };
+ 
+ // Takes an array of 8-bit RGB values and returns the hex value
+ const rgbArrayToHex = (values) => {
+-	let [r, g, b] = values;
++        let [r, g, b] = values;
+ 
+-	if (!(r >= 0 && r <= 255)) r = 0;
+-	if (!(g >= 0 && g <= 255)) g = 0;
+-	if (!(b >= 0 && b <= 255)) r = 0;
++        if (!(r >= 0 && r <= 255)) r = 0;
++        if (!(g >= 0 && g <= 255)) g = 0;
++        if (!(b >= 0 && b <= 255)) b = 0;
+ 
+ 	return `#${intToHex(r)}${intToHex(g)}${intToHex(b)}`;
+ };
+diff --git a/www/src/Services/WebApi.js b/www/src/Services/WebApi.js
+index 9f3311cf..c92d86d9 100644
+--- a/www/src/Services/WebApi.js
++++ b/www/src/Services/WebApi.js
+@@ -203,16 +203,19 @@ async function resetSettings() {
+ 
+ async function getDisplayOptions() {
+ 	try {
+-		const response = await Http.get(`${baseUrl}/api/getDisplayOptions`);
++                const response = await Http.get(`${baseUrl}/api/getDisplayOptions`);
+ 
+-		response.data.splashDuration = response.data.splashDuration / 1000; // milliseconds to seconds
+-		response.data.displaySaverTimeout =
+-			response.data.displaySaverTimeout / 60000; // milliseconds to minutes
++                response.data.splashDuration = response.data.splashDuration / 1000; // milliseconds to seconds
++                response.data.displaySaverTimeout =
++                        response.data.displaySaverTimeout / 60000; // milliseconds to minutes
++                response.data.disableWhenP5General = response.data.disableWhenP5General ? 1 : 0;
++                response.data.p5GeneralOledSafeMode = response.data.p5GeneralOledSafeMode ? 1 : 0;
++                response.data.p5GeneralOledMode = response.data.p5GeneralOledMode ?? 2;
+ 
+-		return response.data;
+-	} catch (error) {
+-		console.error(error);
+-	}
++                return response.data;
++        } catch (error) {
++                console.error(error);
++        }
+ }
+ 
+ async function setDisplayOptions(options, isPreview) {
+@@ -223,9 +226,12 @@ async function setDisplayOptions(options, isPreview) {
+ 	newOptions.buttonLayoutRight = parseInt(options.buttonLayoutRight);
+ 	newOptions.splashMode = parseInt(options.splashMode);
+ 	newOptions.splashDuration = parseInt(options.splashDuration) * 1000; // seconds to milliseconds
+-	newOptions.displaySaverTimeout =
+-		parseInt(options.displaySaverTimeout) * 60000; // minutes to milliseconds
+-	newOptions.splashChoice = parseInt(options.splashChoice);
++        newOptions.displaySaverTimeout =
++                parseInt(options.displaySaverTimeout) * 60000; // minutes to milliseconds
++        newOptions.splashChoice = parseInt(options.splashChoice);
++        newOptions.disableWhenP5General = parseInt(options.disableWhenP5General);
++        newOptions.p5GeneralOledSafeMode = parseInt(options.p5GeneralOledSafeMode);
++        newOptions.p5GeneralOledMode = parseInt(options.p5GeneralOledMode);
+ 
+ 	if (newOptions.buttonLayoutCustomOptions) {
+ 		newOptions.buttonLayoutCustomOptions.params.layout = parseInt(
+@@ -298,18 +304,36 @@ async function setGamepadOptions(options) {
+ }
+ 
+ async function getLedOptions(setLoading) {
+-	setLoading(true);
+-
+-	try {
+-		const response = await Http.get(`${baseUrl}/api/getLedOptions`);
+-		setLoading(false);
+-
+-		response.data.pledColor = rgbIntToHex(response.data.pledColor) || '#ffffff';
+-
+-		return response.data;
+-	} catch (error) {
+-		setLoading(false);
+-		console.error(error);
++        setLoading(true);
++
++        try {
++                const response = await Http.get(`${baseUrl}/api/getLedOptions`);
++                setLoading(false);
++
++                response.data.pledColor = rgbIntToHex(response.data.pledColor) || '#ffffff';
++                response.data.gridGradientColorA = rgbIntToHex(response.data.gridGradientColorA || 0) || '#000000';
++                response.data.gridGradientColorB = rgbIntToHex(response.data.gridGradientColorB || 0) || '#000000';
++                response.data.gridGradientColorC = rgbIntToHex(response.data.gridGradientColorC || 0) || '#000000';
++                response.data.gridGradientColorD = rgbIntToHex(response.data.gridGradientColorD || 0) || '#000000';
++                response.data.gridButtonPressColor =
++                        rgbIntToHex(response.data.gridButtonPressColor || 0) || '#000000';
++                response.data.gridLeverNormalColor =
++                        rgbIntToHex(response.data.gridLeverNormalColor || 0) || '#000000';
++                response.data.gridLeverPressColor =
++                        rgbIntToHex(response.data.gridLeverPressColor || 0) || '#000000';
++                response.data.gridCaseNormalColor =
++                        rgbIntToHex(response.data.gridCaseNormalColor || 0) || '#000000';
++                response.data.gridCaseLeverPressColor =
++                        rgbIntToHex(response.data.gridCaseLeverPressColor || 0) || '#000000';
++                response.data.gridCaseUpIndices = response.data.gridCaseUpIndices || [];
++                response.data.gridCaseDownIndices = response.data.gridCaseDownIndices || [];
++                response.data.gridCaseRightIndices = response.data.gridCaseRightIndices || [];
++                response.data.gridCaseLeftIndices = response.data.gridCaseLeftIndices || [];
++
++                return response.data;
++        } catch (error) {
++                setLoading(false);
++                console.error(error);
+ 	}
+ }
+ 

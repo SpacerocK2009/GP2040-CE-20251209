@@ -1,0 +1,29 @@
+b500b821 2025-12-09 20:08:31 +0900 Reduce P5General OLED contention
+235665dd 2025-12-09 20:38:55 +0900 Handle P5GENERAL mode without RTTI
+626fe3d1 2025-12-09 22:13:08 +0900 Add P5General OLED safe mode option
+4cdde995 2025-12-10 01:11:38 +0900 Optimize OLED pacing for P5General mode
+ad98695b 2025-12-10 05:15:42 +0900 Make P5General OLED guidance conflict-friendly
+3f1814a3 2025-12-10 05:31:58 +0900 Fix lint issues in flags and display settings
+f81464cb 2025-12-10 05:41:09 +0900 Throttle P5General OLED refresh while idle
+e6515608 2025-12-10 10:07:20 +0900 Add Web Config controls for grid gradient preset
+9c1b4f35 2025-12-10 19:15:19 +0900 Fix grid gradient speed enum handling
+84d6ccba 2025-12-10 19:20:38 +0900 Fix grid case count type mismatch
+8281e143 2025-12-10 19:45:45 +0900 Adjust grid gradient behavior
+c32fa3d9 2025-12-10 20:23:30 +0900 Improve grid gradient transitions and speed options
+3399e96b 2025-12-10 20:44:54 +0900 Refine custom preset button gradient
+c08bfe9e 2025-12-10 20:51:05 +0900 Fix grid gradient button initialization
+5f1f7a92 2025-12-10 21:07:36 +0900 Fix grid gradient button wave sequence
+80301f7c 2025-12-10 21:33:04 +0900 Fix grid gradient animation to wave columns smoothly
+d0efd397 2025-12-10 21:46:10 +0900 Implement continuous phase wave for grid gradient
+a720899e 2025-12-10 22:08:10 +0900 Update grid gradient to four-color continuous wave
+de90e1fd 2025-12-11 11:52:01 +0900 Add Stick & 11Buttons OLED layout
+1c602f7b 2025-12-12 17:18:24 +0900 Adjust Stick & 11Buttons OLED layout
+96052698 2025-12-12 22:41:38 +0900 Adjust Stick & 11Buttons layout spacing
+65d3d196 2025-12-12 22:58:18 +0900 Adjust Stick & 11Buttons vertical spacing
+8225eb8a 2025-12-13 21:07:13 +0900 Add grid gradient preset option and preset B layout
+e1587bdd 2025-12-13 21:25:54 +0900 Fix grid gradient preset B horizontal phase
+5ad356aa 2025-12-13 21:45:34 +0900 Fix grid gradient preset B layout mapping
+acf094ca 2025-12-15 14:50:33 +0900 Fix grid gradient speed selection and validation
+34bd00ce 2025-12-15 23:15:54 +0900 Fix grid gradient speed clamping conversions
+9948046d 2025-12-15 23:21:31 +0900 Cast grid gradient speed default to enum
+5ec3b452 2025-12-15 23:26:52 +0900 Fix grid gradient speed clamping
