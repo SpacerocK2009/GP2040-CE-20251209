@@ -177,9 +177,9 @@ void InputMacro::runCurrentMacro() {
         return;
     }
 
-    MacroInput& macroInput = macro.macroInputs[macroInputPosition];
     Gamepad * gamepad = Storage::getInstance().GetGamepad();
     currentMicros = getMicro();
+    MacroInput* currentInput = &macro.macroInputs[macroInputPosition];
 
     if (!macro.interruptible && macro.exclusive) {
         // Prevent any other inputs from modifying our input (Exclusive)
@@ -203,23 +203,28 @@ void InputMacro::runCurrentMacro() {
     if ((currentMicros - macroStartTime) >= macroInputHoldTime) {
         macroStartTime = currentMicros;
         macroInputPosition++;
-        
+
         if (macroInputPosition >= (macro.macroInputs_count)) {
             if ( macro.macroType == ON_PRESS ) {
                 reset(); // On press = no more macro
+                return;
             } else {
                 restart(macro); // On Hold-Repeat or On Toggle = start macro again
+                currentInput = &macro.macroInputs[macroInputPosition];
+                return;
             }
         } else {
             MacroInput& newMacroInput = macro.macroInputs[macroInputPosition];
             uint32_t newMacroInputDuration = newMacroInput.duration + newMacroInput.waitDuration;
             macroInputHoldTime = newMacroInputDuration <= 0 ? INPUT_HOLD_US : newMacroInputDuration;
+            currentInput = &macro.macroInputs[macroInputPosition];
+            return;
         }
     }
 
     // Check if we should still hold this macro input based on duration
-    if ((currentMicros - macroStartTime) <= macroInput.duration) {
-        uint32_t buttonMask = macroInput.buttonMask;
+    if ((currentMicros - macroStartTime) <= currentInput->duration) {
+        uint32_t buttonMask = currentInput->buttonMask;
         if (buttonMask & GAMEPAD_MASK_DU) {
             gamepad->state.dpad |= GAMEPAD_MASK_UP;
         }
