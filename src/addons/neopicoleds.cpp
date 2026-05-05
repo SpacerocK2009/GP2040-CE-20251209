@@ -13,7 +13,6 @@
 #include "addons/neopicoleds.h"
 #include "addons/pleds.h"
 #include "usbdriver.h"
-#include "drivermanager.h"
 #include "enums.h"
 #include "helper.h"
 
@@ -58,6 +57,18 @@ const std::string BUTTON_LABEL_A2 = "A2";
 static std::vector<uint8_t> EMPTY_VECTOR;
 
 uint32_t rgbPLEDValues[4];
+
+namespace {
+constexpr uint32_t SHARED_S1_A2_MASK = GAMEPAD_MASK_S1 | GAMEPAD_MASK_A2;
+
+uint32_t withSharedS1A2Presses(uint32_t buttonState) {
+    if ((buttonState & SHARED_S1_A2_MASK) != 0) {
+        buttonState |= SHARED_S1_A2_MASK;
+    }
+
+    return buttonState;
+}
+} // namespace
 
 // Move to Proto Enums
 typedef enum
@@ -549,10 +560,7 @@ void NeoPicoLEDAddon::process() {
         as.HandleEvent(action);
     }
 
-    uint32_t buttonState = gamepad->state.dpad << 16 | gamepad->state.buttons;
-    if ((buttonState & (GAMEPAD_MASK_S1 | GAMEPAD_MASK_A2)) != 0) {
-        buttonState |= GAMEPAD_MASK_S1 | GAMEPAD_MASK_A2;
-    }
+    uint32_t buttonState = withSharedS1A2Presses(gamepad->state.dpad << 16 | gamepad->state.buttons);
     vector<Pixel> pressed;
     for (auto row : matrix.pixels)
     {
@@ -878,7 +886,6 @@ std::vector<std::vector<Pixel>> NeoPicoLEDAddon::createLEDLayout(ButtonLayout la
 uint8_t NeoPicoLEDAddon::setupButtonPositions()
 {
     const LEDOptions& ledOptions = Storage::getInstance().getLedOptions();
-    const GamepadOptions& gamepadOptions = Storage::getInstance().getGamepadOptions();
     buttonPositions.clear();
     buttonPositions.emplace(BUTTON_LABEL_UP, ledOptions.indexUp);
     buttonPositions.emplace(BUTTON_LABEL_DOWN, ledOptions.indexDown);
@@ -898,17 +905,6 @@ uint8_t NeoPicoLEDAddon::setupButtonPositions()
     buttonPositions.emplace(BUTTON_LABEL_R3, ledOptions.indexR3);
     buttonPositions.emplace(BUTTON_LABEL_A1, ledOptions.indexA1);
     buttonPositions.emplace(BUTTON_LABEL_A2, ledOptions.indexA2);
-
-    if (DriverManager::getInstance().getInputMode() == INPUT_MODE_PS5 && gamepadOptions.switchTpShareForDs4) {
-        const int32_t indexS1 = ledOptions.indexS1;
-        const int32_t indexA2 = ledOptions.indexA2;
-
-        if (indexS1 > -1) {
-            buttonPositions[BUTTON_LABEL_A2] = indexS1;
-        } else if (indexA2 > -1) {
-            buttonPositions[BUTTON_LABEL_S1] = indexA2;
-        }
-    }
 
     uint8_t buttonCount = 0;
     for (auto const& buttonPosition : buttonPositions)

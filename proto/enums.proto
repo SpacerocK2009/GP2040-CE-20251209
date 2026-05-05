@@ -478,11 +478,11 @@ enum GridGradientSpeed
     GRID_GRADIENT_SPEED_3 = 2;
     GRID_GRADIENT_SPEED_4 = 3;
     GRID_GRADIENT_SPEED_5 = 4;
-    GRID_GRADIENT_SPEED_6 = 5;  // Backward-compatible equivalent of GRID_GRADIENT_SPEED_VERY_SLOW.
-    GRID_GRADIENT_SPEED_7 = 6;  // Backward-compatible equivalent of GRID_GRADIENT_SPEED_SLOW.
-    GRID_GRADIENT_SPEED_8 = 7;  // Backward-compatible equivalent of GRID_GRADIENT_SPEED_NORMAL.
-    GRID_GRADIENT_SPEED_9 = 8;  // Backward-compatible equivalent of GRID_GRADIENT_SPEED_FAST.
-    GRID_GRADIENT_SPEED_10 = 9; // Backward-compatible equivalent of GRID_GRADIENT_SPEED_VERY_FAST.
+    GRID_GRADIENT_SPEED_6 = 5;
+    GRID_GRADIENT_SPEED_7 = 6;
+    GRID_GRADIENT_SPEED_8 = 7;
+    GRID_GRADIENT_SPEED_9 = 8;
+    GRID_GRADIENT_SPEED_10 = 9;
 }
 
 // This has to be kept in sync with LEDFormat in NeoPico.h
