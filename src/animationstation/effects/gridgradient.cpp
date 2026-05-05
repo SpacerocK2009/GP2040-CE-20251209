@@ -1,4 +1,5 @@
 #include "gridgradient.h"
+#include "drivermanager.h"
 #include "storagemanager.h"
 
 #include <algorithm>
@@ -270,8 +271,21 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     UpdateTime();
 
     std::set<uint32_t> pressedMasks;
-    for (auto &p : pixels) {
-        pressedMasks.insert(p.mask);
+    const uint32_t buttonState = Storage::getInstance().GetGamepad()->state.buttons;
+    const uint32_t dpadState = Storage::getInstance().GetGamepad()->state.dpad;
+    for (auto mask : buttonMasks) {
+        if ((buttonState & mask) == mask || (dpadState & mask) == mask) {
+            pressedMasks.insert(mask);
+        }
+    }
+
+    const GamepadOptions &gamepadOptions = Storage::getInstance().getGamepadOptions();
+    if (DriverManager::getInstance().getInputMode() == INPUT_MODE_PS5 && gamepadOptions.switchTpShareForDs4) {
+        if (pressedMasks.find(GAMEPAD_MASK_S1) != pressedMasks.end() ||
+            pressedMasks.find(GAMEPAD_MASK_A2) != pressedMasks.end()) {
+            pressedMasks.insert(GAMEPAD_MASK_S1);
+            pressedMasks.insert(GAMEPAD_MASK_A2);
+        }
     }
 
     std::fill_n(frame, 100, ColorBlack);
