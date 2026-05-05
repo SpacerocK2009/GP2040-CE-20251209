@@ -13,6 +13,7 @@
 #include "addons/neopicoleds.h"
 #include "addons/pleds.h"
 #include "usbdriver.h"
+#include "drivermanager.h"
 #include "enums.h"
 #include "helper.h"
 
@@ -877,6 +878,7 @@ std::vector<std::vector<Pixel>> NeoPicoLEDAddon::createLEDLayout(ButtonLayout la
 uint8_t NeoPicoLEDAddon::setupButtonPositions()
 {
     const LEDOptions& ledOptions = Storage::getInstance().getLedOptions();
+    const GamepadOptions& gamepadOptions = Storage::getInstance().getGamepadOptions();
     buttonPositions.clear();
     buttonPositions.emplace(BUTTON_LABEL_UP, ledOptions.indexUp);
     buttonPositions.emplace(BUTTON_LABEL_DOWN, ledOptions.indexDown);
@@ -897,6 +899,16 @@ uint8_t NeoPicoLEDAddon::setupButtonPositions()
     buttonPositions.emplace(BUTTON_LABEL_A1, ledOptions.indexA1);
     buttonPositions.emplace(BUTTON_LABEL_A2, ledOptions.indexA2);
 
+    if (DriverManager::getInstance().getInputMode() == INPUT_MODE_PS5 && gamepadOptions.switchTpShareForDs4) {
+        const int32_t indexS1 = ledOptions.indexS1;
+        const int32_t indexA2 = ledOptions.indexA2;
+
+        if (indexS1 > -1) {
+            buttonPositions[BUTTON_LABEL_A2] = indexS1;
+        } else if (indexA2 > -1) {
+            buttonPositions[BUTTON_LABEL_S1] = indexA2;
+        }
+    }
 
     uint8_t buttonCount = 0;
     for (auto const& buttonPosition : buttonPositions)

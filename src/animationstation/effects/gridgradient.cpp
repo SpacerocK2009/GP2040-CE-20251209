@@ -1,4 +1,5 @@
 #include "gridgradient.h"
+#include "drivermanager.h"
 #include "storagemanager.h"
 
 #include <algorithm>
@@ -53,26 +54,6 @@ constexpr GridGradientSpeed GRID_GRADIENT_SPEED_BY_INDEX[] = {
 // 1-5 are intentionally slower than legacy VERY_SLOW (speed 6).
 constexpr uint32_t GRID_GRADIENT_INTERVAL_MS[] = { 50, 45, 40, 36, 32, 30, 25, 20, 16, 12 };
 constexpr uint32_t GRID_GRADIENT_COLUMN_DURATION_MS[] = { 3200, 2800, 2400, 2100, 1900, 1800, 1400, 1000, 750, 500 };
-
-void addPressedDpadMask(std::set<uint32_t> &pressedMasks, uint8_t dpadState, uint8_t dpadMask, uint32_t buttonMask) {
-    if ((dpadState & dpadMask) == dpadMask) {
-        pressedMasks.insert(buttonMask);
-    }
-}
-
-void addPressedMasksFromGamepad(std::set<uint32_t> &pressedMasks, const Gamepad *gamepad) {
-    const uint32_t buttonState = gamepad->state.buttons;
-    const uint8_t dpadState = gamepad->state.dpad;
-    for (auto mask : buttonMasks) {
-        if ((buttonState & mask) == mask) {
-            pressedMasks.insert(mask);
-        }
-    }
-    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_UP, GAMEPAD_MASK_DU);
-    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_DOWN, GAMEPAD_MASK_DD);
-    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_LEFT, GAMEPAD_MASK_DL);
-    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_RIGHT, GAMEPAD_MASK_DR);
-}
 } // namespace
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
@@ -290,13 +271,21 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     UpdateTime();
 
     std::set<uint32_t> pressedMasks;
-    addPressedMasksFromGamepad(pressedMasks, Storage::getInstance().GetGamepad());
-    addPressedMasksFromGamepad(pressedMasks, Storage::getInstance().GetProcessedGamepad());
+    const uint32_t buttonState = Storage::getInstance().GetGamepad()->state.buttons;
+    const uint32_t dpadState = Storage::getInstance().GetGamepad()->state.dpad;
+    for (auto mask : buttonMasks) {
+        if ((buttonState & mask) == mask || (dpadState & mask) == mask) {
+            pressedMasks.insert(mask);
+        }
+    }
 
-    if (pressedMasks.find(GAMEPAD_MASK_S1) != pressedMasks.end() ||
-        pressedMasks.find(GAMEPAD_MASK_A2) != pressedMasks.end()) {
-        pressedMasks.insert(GAMEPAD_MASK_S1);
-        pressedMasks.insert(GAMEPAD_MASK_A2);
+    const GamepadOptions &gamepadOptions = Storage::getInstance().getGamepadOptions();
+    if (DriverManager::getInstance().getInputMode() == INPUT_MODE_PS5 && gamepadOptions.switchTpShareForDs4) {
+        if (pressedMasks.find(GAMEPAD_MASK_S1) != pressedMasks.end() ||
+            pressedMasks.find(GAMEPAD_MASK_A2) != pressedMasks.end()) {
+            pressedMasks.insert(GAMEPAD_MASK_S1);
+            pressedMasks.insert(GAMEPAD_MASK_A2);
+        }
     }
 
     std::fill_n(frame, 100, ColorBlack);
