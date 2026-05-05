@@ -38,15 +38,41 @@ const GridLayoutPresetB GRID_LAYOUT_PRESET_B[] = {
 };
 
 constexpr GridGradientSpeed GRID_GRADIENT_SPEED_BY_INDEX[] = {
-    GRID_GRADIENT_SPEED_VERY_SLOW,
-    GRID_GRADIENT_SPEED_SLOW,
-    GRID_GRADIENT_SPEED_NORMAL,
-    GRID_GRADIENT_SPEED_FAST,
-    GRID_GRADIENT_SPEED_VERY_FAST,
+    GRID_GRADIENT_SPEED_1,
+    GRID_GRADIENT_SPEED_2,
+    GRID_GRADIENT_SPEED_3,
+    GRID_GRADIENT_SPEED_4,
+    GRID_GRADIENT_SPEED_5,
+    GRID_GRADIENT_SPEED_6,
+    GRID_GRADIENT_SPEED_7,
+    GRID_GRADIENT_SPEED_8,
+    GRID_GRADIENT_SPEED_9,
+    GRID_GRADIENT_SPEED_10,
 };
 
-constexpr uint32_t GRID_GRADIENT_INTERVAL_MS[] = { 25, 20, 16, 30, 12 };
-constexpr uint32_t GRID_GRADIENT_COLUMN_DURATION_MS[] = { 1400, 1000, 750, 1800, 500 };
+// 1-5 are intentionally slower than legacy VERY_SLOW (speed 6).
+constexpr uint32_t GRID_GRADIENT_INTERVAL_MS[] = { 50, 45, 40, 36, 32, 30, 25, 20, 16, 12 };
+constexpr uint32_t GRID_GRADIENT_COLUMN_DURATION_MS[] = { 3200, 2800, 2400, 2100, 1900, 1800, 1400, 1000, 750, 500 };
+
+void addPressedDpadMask(std::set<uint32_t> &pressedMasks, uint8_t dpadState, uint8_t dpadMask, uint32_t buttonMask) {
+    if ((dpadState & dpadMask) == dpadMask) {
+        pressedMasks.insert(buttonMask);
+    }
+}
+
+void addPressedMasksFromGamepad(std::set<uint32_t> &pressedMasks, const Gamepad *gamepad) {
+    const uint32_t buttonState = gamepad->state.buttons;
+    const uint8_t dpadState = gamepad->state.dpad;
+    for (auto mask : buttonMasks) {
+        if ((buttonState & mask) == mask) {
+            pressedMasks.insert(mask);
+        }
+    }
+    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_UP, GAMEPAD_MASK_DU);
+    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_DOWN, GAMEPAD_MASK_DD);
+    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_LEFT, GAMEPAD_MASK_DL);
+    addPressedDpadMask(pressedMasks, dpadState, GAMEPAD_MASK_RIGHT, GAMEPAD_MASK_DR);
+}
 } // namespace
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
@@ -152,17 +178,17 @@ void GridGradient::setupPresetBCells() {
 }
 
 GridGradientSpeed GridGradient::resolveSpeed(int32_t value) const {
-    const int32_t clamped = std::clamp<int32_t>(value, 0, 4);
+    const int32_t clamped = std::clamp<int32_t>(value, 0, 9);
     return GRID_GRADIENT_SPEED_BY_INDEX[clamped];
 }
 
 uint32_t GridGradient::getIntervalMs(GridGradientSpeed speed) const {
-    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 4);
+    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 9);
     return GRID_GRADIENT_INTERVAL_MS[clamped];
 }
 
 uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
-    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 4);
+    const int32_t clamped = std::clamp<int32_t>(static_cast<int32_t>(speed), 0, 9);
     return GRID_GRADIENT_COLUMN_DURATION_MS[clamped];
 }
 
@@ -230,8 +256,8 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
             if (offset < 0)
                 continue;
 
-            uint32_t target = static_cast<uint32_t>(start + offset);
-            if (target >= static_cast<uint32_t>(start) && target < static_cast<uint32_t>(start) + limit) {
+            uint32_t target = static_cast<uint32_t>(offset);
+            if (target < 100) {
                 activeTargets.insert(target);
             }
         }
@@ -264,8 +290,13 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     UpdateTime();
 
     std::set<uint32_t> pressedMasks;
-    for (auto &p : pixels) {
-        pressedMasks.insert(p.mask);
+    addPressedMasksFromGamepad(pressedMasks, Storage::getInstance().GetGamepad());
+    addPressedMasksFromGamepad(pressedMasks, Storage::getInstance().GetProcessedGamepad());
+
+    if (pressedMasks.find(GAMEPAD_MASK_S1) != pressedMasks.end() ||
+        pressedMasks.find(GAMEPAD_MASK_A2) != pressedMasks.end()) {
+        pressedMasks.insert(GAMEPAD_MASK_S1);
+        pressedMasks.insert(GAMEPAD_MASK_A2);
     }
 
     std::fill_n(frame, 100, ColorBlack);
@@ -389,14 +420,14 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
 void GridGradient::ParameterUp() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
     const int32_t current =
-        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4);
-    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>((current + 1) % 5);
+        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 9);
+    animationOptions.gridGradientSpeed = static_cast<GridGradientSpeed>((current + 1) % 10);
 }
 
 void GridGradient::ParameterDown() {
     AnimationOptions &animationOptions = Storage::getInstance().getAnimationOptions();
     const int32_t current =
-        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 4);
+        std::clamp<int32_t>(static_cast<int32_t>(animationOptions.gridGradientSpeed), 0, 9);
     animationOptions.gridGradientSpeed =
-        static_cast<GridGradientSpeed>(current == 0 ? 4 : current - 1);
+        static_cast<GridGradientSpeed>(current == 0 ? 9 : current - 1);
 }
