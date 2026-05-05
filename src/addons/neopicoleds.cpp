@@ -550,6 +550,9 @@ void NeoPicoLEDAddon::process() {
     }
 
     uint32_t buttonState = gamepad->state.dpad << 16 | gamepad->state.buttons;
+    if ((buttonState & (GAMEPAD_MASK_S1 | GAMEPAD_MASK_A2)) != 0) {
+        buttonState |= GAMEPAD_MASK_S1 | GAMEPAD_MASK_A2;
+    }
     vector<Pixel> pressed;
     for (auto row : matrix.pixels)
     {

@@ -237,8 +237,8 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
             if (offset < 0)
                 continue;
 
-            uint32_t target = static_cast<uint32_t>(start + offset);
-            if (target >= static_cast<uint32_t>(start) && target < static_cast<uint32_t>(start) + limit) {
+            uint32_t target = static_cast<uint32_t>(offset);
+            if (target < 100) {
                 activeTargets.insert(target);
             }
         }
