@@ -1,5 +1,4 @@
 #include "gridgradient.h"
-#include "drivermanager.h"
 #include "storagemanager.h"
 
 #include <algorithm>
@@ -51,9 +50,15 @@ constexpr GridGradientSpeed GRID_GRADIENT_SPEED_BY_INDEX[] = {
     GRID_GRADIENT_SPEED_10,
 };
 
-// 1-5 are intentionally slower than legacy VERY_SLOW (speed 6).
 constexpr uint32_t GRID_GRADIENT_INTERVAL_MS[] = { 50, 45, 40, 36, 32, 30, 25, 20, 16, 12 };
 constexpr uint32_t GRID_GRADIENT_COLUMN_DURATION_MS[] = { 3200, 2800, 2400, 2100, 1900, 1800, 1400, 1000, 750, 500 };
+
+constexpr uint32_t GRID_GRADIENT_DPAD_MASKS[] = {
+    GAMEPAD_MASK_DU,
+    GAMEPAD_MASK_DD,
+    GAMEPAD_MASK_DL,
+    GAMEPAD_MASK_DR,
+};
 } // namespace
 
 GridGradient::GridGradient(PixelMatrix &matrix) : Animation(matrix) {
@@ -173,6 +178,33 @@ uint32_t GridGradient::getColumnDurationMs(GridGradientSpeed speed) const {
     return GRID_GRADIENT_COLUMN_DURATION_MS[clamped];
 }
 
+void GridGradient::addPressedMasksFromGamepad(Gamepad *gamepad, std::set<uint32_t> &pressedMasks) const {
+    if (gamepad == nullptr) {
+        return;
+    }
+
+    const uint32_t buttonState = gamepad->state.dpad << 16 | gamepad->state.buttons;
+    for (auto mask : buttonMasks) {
+        if ((buttonState & mask) == mask) {
+            pressedMasks.insert(mask);
+        }
+    }
+
+    for (auto mask : GRID_GRADIENT_DPAD_MASKS) {
+        if ((buttonState & mask) == mask) {
+            pressedMasks.insert(mask);
+        }
+    }
+}
+
+void GridGradient::normalizeSharedS1A2Presses(std::set<uint32_t> &pressedMasks) const {
+    if ((pressedMasks.find(GAMEPAD_MASK_S1) != pressedMasks.end()) ||
+        (pressedMasks.find(GAMEPAD_MASK_A2) != pressedMasks.end())) {
+        pressedMasks.insert(GAMEPAD_MASK_S1);
+        pressedMasks.insert(GAMEPAD_MASK_A2);
+    }
+}
+
 bool GridGradient::isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const {
     return pressedMasks.find(mask) != pressedMasks.end();
 }
@@ -207,11 +239,11 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
     int32_t start = ledOptions.caseRGBIndex;
     uint32_t count = ledOptions.caseRGBCount;
 
-    if (start < 0 || count == 0) {
+    if (start < 0 || start >= 100 || count == 0) {
         return;
     }
 
-    uint32_t limit = std::min<uint32_t>(count, 100 - start);
+    uint32_t limit = std::min<uint32_t>(count, 100 - static_cast<uint32_t>(start));
 
     struct DirectionConfig {
         uint32_t mask;
@@ -233,12 +265,12 @@ void GridGradient::renderCaseLeds(RGB (&frame)[100], const std::set<uint32_t> &p
             continue;
 
         for (pb_size_t i = 0; i < config.count; i++) {
-            int32_t offset = config.values[i];
-            if (offset < 0)
+            int32_t configuredIndex = config.values[i];
+            if (configuredIndex < 0)
                 continue;
 
-            uint32_t target = static_cast<uint32_t>(offset);
-            if (target < 100) {
+            uint32_t target = static_cast<uint32_t>(configuredIndex);
+            if (target >= static_cast<uint32_t>(start) && target < static_cast<uint32_t>(start) + limit) {
                 activeTargets.insert(target);
             }
         }
@@ -271,22 +303,9 @@ bool GridGradient::Animate(RGB (&frame)[100]) {
     UpdateTime();
 
     std::set<uint32_t> pressedMasks;
-    const uint32_t buttonState = Storage::getInstance().GetGamepad()->state.buttons;
-    const uint32_t dpadState = Storage::getInstance().GetGamepad()->state.dpad;
-    for (auto mask : buttonMasks) {
-        if ((buttonState & mask) == mask || (dpadState & mask) == mask) {
-            pressedMasks.insert(mask);
-        }
-    }
-
-    const GamepadOptions &gamepadOptions = Storage::getInstance().getGamepadOptions();
-    if (DriverManager::getInstance().getInputMode() == INPUT_MODE_PS5 && gamepadOptions.switchTpShareForDs4) {
-        if (pressedMasks.find(GAMEPAD_MASK_S1) != pressedMasks.end() ||
-            pressedMasks.find(GAMEPAD_MASK_A2) != pressedMasks.end()) {
-            pressedMasks.insert(GAMEPAD_MASK_S1);
-            pressedMasks.insert(GAMEPAD_MASK_A2);
-        }
-    }
+    addPressedMasksFromGamepad(Storage::getInstance().GetGamepad(), pressedMasks);
+    addPressedMasksFromGamepad(Storage::getInstance().GetProcessedGamepad(), pressedMasks);
+    normalizeSharedS1A2Presses(pressedMasks);
 
     std::fill_n(frame, 100, ColorBlack);
 

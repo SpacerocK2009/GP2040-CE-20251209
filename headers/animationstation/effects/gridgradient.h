@@ -11,6 +11,8 @@
 #include <set>
 #include <vector>
 
+class Gamepad;
+
 class GridGradient : public Animation {
 public:
     explicit GridGradient(PixelMatrix &matrix);
@@ -44,6 +46,8 @@ private:
     GridGradientSpeed resolveSpeed(int32_t value) const;
     uint32_t getIntervalMs(GridGradientSpeed speed) const;
     uint32_t getColumnDurationMs(GridGradientSpeed speed) const;
+    void addPressedMasksFromGamepad(Gamepad *gamepad, std::set<uint32_t> &pressedMasks) const;
+    void normalizeSharedS1A2Presses(std::set<uint32_t> &pressedMasks) const;
     bool isMaskPressed(uint32_t mask, const std::set<uint32_t> &pressedMasks) const;
     RGB interpolate(const RGB &from, const RGB &to, float t) const;
     RGB columnColor(float t, const RGB &colorA, const RGB &colorB, const RGB &colorC, const RGB &colorD) const;
