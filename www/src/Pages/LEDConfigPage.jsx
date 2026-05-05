@@ -43,11 +43,16 @@ const CASE_TYPE = [
 ];
 
 const GRID_GRADIENT_SPEED = [
-        { value: 0, label: 'very-slow' },
-        { value: 1, label: 'slow' },
-        { value: 2, label: 'normal' },
-        { value: 3, label: 'fast' },
-        { value: 4, label: 'very-fast' },
+        { value: 0, label: '1' },
+        { value: 1, label: '2' },
+        { value: 2, label: '3' },
+        { value: 3, label: '4' },
+        { value: 4, label: '5' },
+        { value: 5, label: '6' },
+        { value: 6, label: '7' },
+        { value: 7, label: '8' },
+        { value: 8, label: '9' },
+        { value: 9, label: '10' },
 ];
 
 const defaultValue = {
@@ -180,7 +185,7 @@ const schema = yup.object().shape({
         gridGradientColorC: yup.string().label('Grid Color C').validateColor(),
         gridGradientColorD: yup.string().label('Grid Color D').validateColor(),
         gridButtonPressColor: yup.string().label('Grid Press Color').validateColor(),
-        gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(4),
+        gridGradientSpeed: yup.number().label('Grid Speed').min(0).max(9),
         gridGradientPreset: yup
                 .number()
                 .label('Grid Layout Preset')
@@ -312,12 +317,6 @@ export default function LEDConfigPage() {
         CASE_TYPE[0].label = t(`LedConfig:case.case-type-off`);
         CASE_TYPE[1].label = t(`LedConfig:case.case-type-ambient`);
         CASE_TYPE[2].label = t(`LedConfig:case.case-type-linked`);
-
-        GRID_GRADIENT_SPEED[0].label = t(`LedConfig:grid.speed-very-slow`);
-        GRID_GRADIENT_SPEED[1].label = t(`LedConfig:grid.speed-slow`);
-        GRID_GRADIENT_SPEED[2].label = t(`LedConfig:grid.speed-normal`);
-        GRID_GRADIENT_SPEED[3].label = t(`LedConfig:grid.speed-fast`);
-        GRID_GRADIENT_SPEED[4].label = t(`LedConfig:grid.speed-very-fast`);
 
 	const ledOrderChanged = (setFieldValue, ledOrderArrays, ledsPerButton) => {
 		if (ledOrderArrays.length === 2) {
