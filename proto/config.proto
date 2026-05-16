@@ -420,6 +420,7 @@ message AnalogOptions
     optional int32 analogAdc1PinX = 2;
     optional int32 analogAdc1PinY = 3;
     optional bool forced_circularity = 4;
+    // Stick 1 deadzone/calibration settings are intentionally separate from stick 2 for Web Configurator controls.
     optional uint32 inner_deadzone = 5;
     optional int32 analogAdc2PinX = 6;
     optional int32 analogAdc2PinY = 7;
@@ -435,10 +436,21 @@ message AnalogOptions
     optional bool analog_smoothing2 = 17;
     optional float smoothing_factor2 = 18;
     optional uint32 analog_error2 = 19;
+    // Stick 2 deadzone/calibration settings are intentionally separate from stick 1 for Web Configurator controls.
     optional uint32 inner_deadzone2 = 20;
     optional uint32 outer_deadzone2 = 21;
     optional bool auto_calibrate2 = 22;
     optional bool forced_circularity2 = 23;
+    // Per-stick analog calibration ranges used by the Web Configurator and firmware.
+    // Defaults of 0/4095 preserve legacy outer-deadzone behavior until calibration learns narrower stick limits.
+    optional uint32 x_min = 24;
+    optional uint32 x_max = 25;
+    optional uint32 y_min = 26;
+    optional uint32 y_max = 27;
+    optional uint32 x_min2 = 28;
+    optional uint32 x_max2 = 29;
+    optional uint32 y_min2 = 30;
+    optional uint32 y_max2 = 31;
 }
 
 message TurboOptions

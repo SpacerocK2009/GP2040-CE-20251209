@@ -96,11 +96,11 @@ export const analogScheme = {
 	outer_deadzone: yup
 		.number()
 		.label('Outer Deadzone Size (%)')
-		.validateRangeWhenValue('AnalogInputEnabled', 0, 100),
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 200),
 	outer_deadzone2: yup
 		.number()
 		.label('Outer Deadzone Size (%)')
-		.validateRangeWhenValue('AnalogInputEnabled', 0, 100),
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 200),
 	auto_calibrate: yup
 		.number()
 		.label('Auto Calibration')
@@ -133,6 +133,39 @@ export const analogScheme = {
 		.number()
 		.label('Error Rate 2')
 		.validateSelectionWhenValue('AnalogInputEnabled', ANALOG_ERROR_RATES),
+	// Per-stick calibration bounds; stored by firmware and available for Web Configurator reset/calibration UI.
+	x_min: yup
+		.number()
+		.label('Analog Stick 1 X Min')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	x_max: yup
+		.number()
+		.label('Analog Stick 1 X Max')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	y_min: yup
+		.number()
+		.label('Analog Stick 1 Y Min')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	y_max: yup
+		.number()
+		.label('Analog Stick 1 Y Max')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	x_min2: yup
+		.number()
+		.label('Analog Stick 2 X Min')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	x_max2: yup
+		.number()
+		.label('Analog Stick 2 X Max')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	y_min2: yup
+		.number()
+		.label('Analog Stick 2 Y Min')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
+	y_max2: yup
+		.number()
+		.label('Analog Stick 2 Y Max')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 4095),
 };
 
 export const analogState = {
@@ -159,6 +192,15 @@ export const analogState = {
 	smoothing_factor2: 5,
 	analog_error: 1,
 	analog_error2: 1,
+	// Per-stick calibration bounds are persisted by firmware; defaults keep legacy 12-bit ADC behavior.
+	x_min: 0,
+	x_max: 4095,
+	y_min: 0,
+	y_max: 4095,
+	x_min2: 0,
+	x_max2: 4095,
+	y_min2: 0,
+	y_max2: 4095,
 };
 
 const Analog = ({ values, errors, handleChange, handleCheckbox }: AddonPropTypes) => {
@@ -173,6 +215,7 @@ const Analog = ({ values, errors, handleChange, handleCheckbox }: AddonPropTypes
 			<a
 				href="https://gp2040-ce.info/add-ons/analog"
 				target="_blank"
+			rel="noreferrer"
 				className="text-reset text-decoration-none"
 			>
 				{t('AddonsConfig:analog-header-text')}
@@ -286,9 +329,10 @@ const Analog = ({ values, errors, handleChange, handleCheckbox }: AddonPropTypes
 										isInvalid={Boolean(errors.outer_deadzone)}
 										onChange={handleChange}
 										min={0}
-										max={100}
+										max={200}
 									/>
 								</Row>
+								{/* Calibration bounds are learned by firmware and posted for future Web Configurator calibration/reset controls. */}
 								<Row className="mb-3">
 									<FormCheck
 										label={t('AddonsConfig:analog-smoothing')}
@@ -452,9 +496,10 @@ const Analog = ({ values, errors, handleChange, handleCheckbox }: AddonPropTypes
 										isInvalid={Boolean(errors.outer_deadzone2)}
 										onChange={handleChange}
 										min={0}
-										max={100}
+										max={200}
 									/>
 								</Row>
+								{/* Calibration bounds are learned by firmware and posted for future Web Configurator calibration/reset controls. */}
 								<Row className="mb-3">
 									<FormCheck
 										label={t('AddonsConfig:analog-smoothing')}

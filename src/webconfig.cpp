@@ -1759,6 +1759,15 @@ std::string setAddonOptions()
     docToValue(analogOptions.smoothing_factor2, doc, "smoothing_factor2");
     docToValue(analogOptions.analog_error, doc, "analog_error");
     docToValue(analogOptions.analog_error2, doc, "analog_error2");
+    // Per-stick calibration bounds are exposed for Web Configurator calibration/reset flows.
+    docToValue(analogOptions.x_min, doc, "x_min");
+    docToValue(analogOptions.x_max, doc, "x_max");
+    docToValue(analogOptions.y_min, doc, "y_min");
+    docToValue(analogOptions.y_max, doc, "y_max");
+    docToValue(analogOptions.x_min2, doc, "x_min2");
+    docToValue(analogOptions.x_max2, doc, "x_max2");
+    docToValue(analogOptions.y_min2, doc, "y_min2");
+    docToValue(analogOptions.y_max2, doc, "y_max2");
     docToValue(analogOptions.enabled, doc, "AnalogInputEnabled");
 
     BootselButtonOptions& bootselButtonOptions = Storage::getInstance().getAddonOptions().bootselButtonOptions;
@@ -2213,6 +2222,15 @@ std::string getAddonOptions()
     writeDoc(doc, "smoothing_factor2", analogOptions.smoothing_factor2);
     writeDoc(doc, "analog_error", analogOptions.analog_error);
     writeDoc(doc, "analog_error2", analogOptions.analog_error2);
+    // Per-stick calibration bounds are exposed for Web Configurator calibration/reset flows.
+    writeDoc(doc, "x_min", analogOptions.x_min);
+    writeDoc(doc, "x_max", analogOptions.x_max);
+    writeDoc(doc, "y_min", analogOptions.y_min);
+    writeDoc(doc, "y_max", analogOptions.y_max);
+    writeDoc(doc, "x_min2", analogOptions.x_min2);
+    writeDoc(doc, "x_max2", analogOptions.x_max2);
+    writeDoc(doc, "y_min2", analogOptions.y_min2);
+    writeDoc(doc, "y_max2", analogOptions.y_max2);
     writeDoc(doc, "AnalogInputEnabled", analogOptions.enabled);
 
     const BootselButtonOptions& bootselButtonOptions = Storage::getInstance().getAddonOptions().bootselButtonOptions;
