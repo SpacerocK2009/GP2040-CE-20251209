@@ -114,6 +114,10 @@ typedef struct
     float y_value;
     uint16_t x_center;
     uint16_t y_center;
+    uint16_t x_min;
+    uint16_t x_max;
+    uint16_t y_min;
+    uint16_t y_max;
     float xy_magnitude;
     float x_magnitude;
     float y_magnitude;
@@ -140,12 +144,17 @@ public:
     virtual void reinit() {}
     virtual std::string name() { return AnalogName; }
 private:
-    float readPin(int stick_num, Pin_t pin, uint16_t center);
+    float readPin(int stick_num, Pin_t pin, uint16_t center, bool is_x_axis);
+    bool updateCalibrationBounds(int stick_num, bool is_x_axis, uint16_t adc_value);
+    float normalizeCalibratedValue(uint16_t adc_value, uint16_t center, uint16_t min_value, uint16_t max_value);
+    void saveCalibrationBounds();
     float emaCalculation(int stick_num, float ema_value, float ema_previous);
     uint16_t map(uint16_t x, uint16_t in_min, uint16_t in_max, uint16_t out_min, uint16_t out_max);
     float magnitudeCalculation(int stick_num, adc_instance & adc_inst);
     void radialDeadzone(int stick_num, adc_instance & adc_inst);
     adc_instance adc_pairs[ADC_COUNT];
+    bool calibration_save_pending = false;
+    uint32_t next_calibration_save = 0;
 };
 
 #endif  // _Analog_H_
