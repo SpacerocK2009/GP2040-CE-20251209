@@ -17,11 +17,14 @@
 #define ANALOG_CALIBRATION_SAVE_DELAY_MS 5000
 #define ANALOG_CALIBRATION_MIN_RANGE 16
 
+static constexpr float ANALOG_MIN_EMA_WEIGHT = 0.05f;
+
 static float toSmoothingWeight(float smoothingStrength) {
     // UI exposes "smoothing strength" where 0 means no smoothing and 100 means strongest smoothing.
     // EMA expects the weight of the *new* sample, so invert strength into new-sample weight.
-    // strength 0 -> weight 1.0f, strength 100 -> weight 0.0f.
-    return std::clamp(1.0f - (smoothingStrength / 100.0f), 0.0f, 1.0f);
+    // strength 0 -> weight 1.0f, strength 100 -> minimum clamp to prevent input lock-up.
+    float weight = 1.0f - (smoothingStrength / 100.0f);
+    return std::clamp(weight, ANALOG_MIN_EMA_WEIGHT, 1.0f);
 }
 
 bool AnalogInput::available() {
@@ -77,8 +80,8 @@ void AnalogInput::setup() {
         adc_pairs[i].xy_magnitude = 0.0f;
         adc_pairs[i].x_magnitude = 0.0f;
         adc_pairs[i].y_magnitude = 0.0f;
-        adc_pairs[i].x_ema = 0.0f;
-        adc_pairs[i].y_ema = 0.0f;
+        adc_pairs[i].x_ema = ANALOG_CENTER;
+        adc_pairs[i].y_ema = ANALOG_CENTER;
         adc_pairs[i].ema_smoothing_min = std::clamp(adc_pairs[i].ema_smoothing_min, 0.0f, 1.0f);
         adc_pairs[i].ema_smoothing_max = std::clamp(adc_pairs[i].ema_smoothing_max, 0.0f, 1.0f);
         if (adc_pairs[i].x_max <= adc_pairs[i].x_min) {
@@ -129,44 +132,62 @@ void AnalogInput::process() {
     }
 
     for(int i = 0; i < ADC_COUNT; i++) {
+        float raw_x = adc_pairs[i].x_value;
+        float raw_y = adc_pairs[i].y_value;
+
         // Read X-Axis
         if (isValidPin(adc_pairs[i].x_pin)) {
-            adc_pairs[i].x_value = readPin(i, adc_pairs[i].x_pin_adc, adc_pairs[i].x_center, true);
+            raw_x = readPin(i, adc_pairs[i].x_pin_adc, adc_pairs[i].x_center, true);
             if (adc_pairs[i].analog_invert == InvertMode::INVERT_X || 
                 adc_pairs[i].analog_invert == InvertMode::INVERT_XY) {
-                adc_pairs[i].x_value = ANALOG_MAX - adc_pairs[i].x_value;
+                raw_x = ANALOG_MAX - raw_x;
             }
         }
         // Read Y-Axis
         if (isValidPin(adc_pairs[i].y_pin)) {
-            adc_pairs[i].y_value = readPin(i, adc_pairs[i].y_pin_adc, adc_pairs[i].y_center, false);
+            raw_y = readPin(i, adc_pairs[i].y_pin_adc, adc_pairs[i].y_center, false);
             if (adc_pairs[i].analog_invert == InvertMode::INVERT_Y || 
                 adc_pairs[i].analog_invert == InvertMode::INVERT_XY) {
-                adc_pairs[i].y_value = ANALOG_MAX - adc_pairs[i].y_value;
+                raw_y = ANALOG_MAX - raw_y;
             }
         }
-        // Calculate magnitude from this frame's raw X/Y so dynamic smoothing uses current stick position.
-        adc_pairs[i].xy_magnitude = magnitudeCalculation(i, adc_pairs[i]);
-        if (adc_pairs[i].ema_option) {
-            adc_pairs[i].x_value = emaCalculation(i, adc_pairs[i].x_value, adc_pairs[i].x_ema);
-            adc_pairs[i].x_ema = adc_pairs[i].x_value;
-            adc_pairs[i].y_value = emaCalculation(i, adc_pairs[i].y_value, adc_pairs[i].y_ema);
-            adc_pairs[i].y_ema = adc_pairs[i].y_value;
-        }
-        // Look for dead-zones and circularity
-        adc_pairs[i].xy_magnitude = magnitudeCalculation(i, adc_pairs[i]);
-        if (adc_pairs[i].xy_magnitude < adc_pairs[i].in_deadzone) {
-            adc_pairs[i].x_value = ANALOG_CENTER;
-            adc_pairs[i].y_value = ANALOG_CENTER;
+
+        adc_pairs[i].x_value = raw_x;
+        adc_pairs[i].y_value = raw_y;
+        float rawMagnitude = magnitudeCalculation(i, adc_pairs[i]);
+
+        float final_x = ANALOG_CENTER;
+        float final_y = ANALOG_CENTER;
+
+        if (rawMagnitude < adc_pairs[i].in_deadzone) {
             adc_pairs[i].x_ema = ANALOG_CENTER;
             adc_pairs[i].y_ema = ANALOG_CENTER;
+            adc_pairs[i].xy_magnitude = 0.0f;
         } else {
+            adc_pairs[i].xy_magnitude = rawMagnitude;
             radialDeadzone(i, adc_pairs[i]);
+            float processed_x = adc_pairs[i].x_value;
+            float processed_y = adc_pairs[i].y_value;
+
+            if (adc_pairs[i].ema_option) {
+                float smoothed_x = emaCalculation(i, processed_x, adc_pairs[i].x_ema);
+                float smoothed_y = emaCalculation(i, processed_y, adc_pairs[i].y_ema);
+                adc_pairs[i].x_ema = smoothed_x;
+                adc_pairs[i].y_ema = smoothed_y;
+                final_x = smoothed_x;
+                final_y = smoothed_y;
+            } else {
+                final_x = processed_x;
+                final_y = processed_y;
+            }
         }
 
+        adc_pairs[i].x_value = final_x;
+        adc_pairs[i].y_value = final_y;
+
         // If MID is 0x8000, clamp our max to 0xFFFF incase we are at 0x10000. 0x7FFF will max at 0xFFFE
-        uint16_t clampedX = (uint16_t)std::min((uint32_t)(joystickMax * std::min(adc_pairs[i].x_value, 1.0f)), (uint32_t)0xFFFF);
-        uint16_t clampedY = (uint16_t)std::min((uint32_t)(joystickMax * std::min(adc_pairs[i].y_value, 1.0f)), (uint32_t)0xFFFF);
+        uint16_t clampedX = (uint16_t)std::min((uint32_t)(joystickMax * std::min(final_x, 1.0f)), (uint32_t)0xFFFF);
+        uint16_t clampedY = (uint16_t)std::min((uint32_t)(joystickMax * std::min(final_y, 1.0f)), (uint32_t)0xFFFF);
 
         if (adc_pairs[i].analog_dpad == DpadMode::DPAD_MODE_LEFT_ANALOG) {
             gamepad->state.lx = clampedX;
@@ -268,9 +289,13 @@ void AnalogInput::saveCalibrationBounds() {
 }
 
 float AnalogInput::emaCalculation(int stick_num, float ema_value, float ema_previous) {
-    float magnitude = std::clamp(adc_pairs[stick_num].xy_magnitude, 0.0f, 1.0f);
-    float dynamicSmoothing = ((1.0f - magnitude) * adc_pairs[stick_num].ema_smoothing_min) +
-                             (magnitude * adc_pairs[stick_num].ema_smoothing_max);
+    float deadzoneRange = std::max(adc_pairs[stick_num].out_deadzone - adc_pairs[stick_num].in_deadzone, 0.0f);
+    float travel = deadzoneRange > 0.0f ?
+        std::clamp((adc_pairs[stick_num].xy_magnitude - adc_pairs[stick_num].in_deadzone) / deadzoneRange, 0.0f, 1.0f) :
+        1.0f;
+
+    float dynamicSmoothing = ((1.0f - travel) * adc_pairs[stick_num].ema_smoothing_min) +
+                             (travel * adc_pairs[stick_num].ema_smoothing_max);
     return (dynamicSmoothing * ema_value) + ((1.0f - dynamicSmoothing) * ema_previous);
 }
 
