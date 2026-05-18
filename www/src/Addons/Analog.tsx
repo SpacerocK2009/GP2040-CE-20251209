@@ -42,6 +42,7 @@ const ANALOG_ERROR_RATES = [
 	{ label: '15%', value: 821 },
 ];
 
+// TODO: Add Analog section UI fields for smoothing_factor_min/max and smoothing_factor2_min/max.
 export const analogScheme = {
 	AnalogInputEnabled: yup.number().required().label('Analog Input Enabled'),
 	analogAdc1PinX: yup

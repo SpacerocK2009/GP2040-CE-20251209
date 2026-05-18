@@ -127,6 +127,8 @@ typedef struct
     float y_ema;
     bool ema_option;
     float ema_smoothing;
+    float ema_smoothing_min;
+    float ema_smoothing_max;
     float error_rate;
     float in_deadzone;
     float out_deadzone;

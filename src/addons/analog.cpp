@@ -31,6 +31,8 @@ void AnalogInput::setup() {
     adc_pairs[0].analog_dpad = analogOptions.analogAdc1Mode;
     adc_pairs[0].ema_option = analogOptions.analog_smoothing;
     adc_pairs[0].ema_smoothing = analogOptions.smoothing_factor / 1000.0f;
+    adc_pairs[0].ema_smoothing_min = analogOptions.has_smoothing_factor_min ? analogOptions.smoothing_factor_min / 1000.0f : adc_pairs[0].ema_smoothing;
+    adc_pairs[0].ema_smoothing_max = analogOptions.has_smoothing_factor_max ? analogOptions.smoothing_factor_max / 1000.0f : adc_pairs[0].ema_smoothing;
     adc_pairs[0].error_rate = analogOptions.analog_error / 1000.0f;
     adc_pairs[0].in_deadzone = analogOptions.inner_deadzone / 100.0f;
     adc_pairs[0].out_deadzone = analogOptions.outer_deadzone / 100.0f;
@@ -46,6 +48,8 @@ void AnalogInput::setup() {
     adc_pairs[1].analog_dpad = analogOptions.analogAdc2Mode;
     adc_pairs[1].ema_option = analogOptions.analog_smoothing2;
     adc_pairs[1].ema_smoothing = analogOptions.smoothing_factor2 / 1000.0f;
+    adc_pairs[1].ema_smoothing_min = analogOptions.has_smoothing_factor2_min ? analogOptions.smoothing_factor2_min / 1000.0f : adc_pairs[1].ema_smoothing;
+    adc_pairs[1].ema_smoothing_max = analogOptions.has_smoothing_factor2_max ? analogOptions.smoothing_factor2_max / 1000.0f : adc_pairs[1].ema_smoothing;
     adc_pairs[1].error_rate = analogOptions.analog_error2 / 1000.0f;
     adc_pairs[1].in_deadzone = analogOptions.inner_deadzone2 / 100.0f;
     adc_pairs[1].out_deadzone = analogOptions.outer_deadzone2 / 100.0f;
@@ -68,6 +72,8 @@ void AnalogInput::setup() {
         adc_pairs[i].y_magnitude = 0.0f;
         adc_pairs[i].x_ema = 0.0f;
         adc_pairs[i].y_ema = 0.0f;
+        adc_pairs[i].ema_smoothing_min = std::clamp(adc_pairs[i].ema_smoothing_min, 0.0f, 1.0f);
+        adc_pairs[i].ema_smoothing_max = std::clamp(adc_pairs[i].ema_smoothing_max, 0.0f, 1.0f);
         if (adc_pairs[i].x_max <= adc_pairs[i].x_min) {
             adc_pairs[i].x_min = 0;
             adc_pairs[i].x_max = ADC_MAX;
@@ -253,7 +259,10 @@ void AnalogInput::saveCalibrationBounds() {
 }
 
 float AnalogInput::emaCalculation(int stick_num, float ema_value, float ema_previous) {
-    return (adc_pairs[stick_num].ema_smoothing * ema_value) + ((1.0f - adc_pairs[stick_num].ema_smoothing) * ema_previous);
+    float magnitude = std::clamp(adc_pairs[stick_num].xy_magnitude, 0.0f, 1.0f);
+    float dynamicSmoothing = ((1.0f - magnitude) * adc_pairs[stick_num].ema_smoothing_min) +
+                             (magnitude * adc_pairs[stick_num].ema_smoothing_max);
+    return (dynamicSmoothing * ema_value) + ((1.0f - dynamicSmoothing) * ema_previous);
 }
 
 uint16_t AnalogInput::map(uint16_t x, uint16_t in_min, uint16_t in_max, uint16_t out_min, uint16_t out_max) {
