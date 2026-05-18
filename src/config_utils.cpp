@@ -635,14 +635,12 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, outer_deadzone, DEFAULT_OUTER_DEADZONE);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, auto_calibrate, !!AUTO_CALIBRATE_ENABLED);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, analog_smoothing, !!ANALOG_SMOOTHING_ENABLED);
-    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_factor, !!SMOOTHING_FACTOR);
-    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_factor_min, !!SMOOTHING_FACTOR);
-    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_factor_max, !!SMOOTHING_FACTOR);
+    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_inner, SMOOTHING_FACTOR);
+    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_outer, SMOOTHING_FACTOR);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, analog_error, ANALOG_ERROR);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, analog_smoothing2, !!ANALOG_SMOOTHING2_ENABLED);
-    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_factor2, !!SMOOTHING_FACTOR2);
-    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_factor2_min, !!SMOOTHING_FACTOR2);
-    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_factor2_max, !!SMOOTHING_FACTOR2);
+    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_inner2, SMOOTHING_FACTOR2);
+    INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, smoothing_outer2, SMOOTHING_FACTOR2);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, analog_error2, ANALOG_ERROR2);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, inner_deadzone2, DEFAULT_INNER_DEADZONE2);
     INIT_UNSET_PROPERTY(config.addonOptions.analogOptions, outer_deadzone2, DEFAULT_OUTER_DEADZONE2);

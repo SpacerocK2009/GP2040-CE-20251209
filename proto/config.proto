@@ -431,16 +431,18 @@ message AnalogOptions
     optional bool auto_calibrate = 12;
     optional uint32 outer_deadzone = 13;
     optional bool analog_smoothing = 14;
-    optional float smoothing_factor = 15;
+    optional float smoothing_inner = 15;
     optional uint32 analog_error = 16;
     optional bool analog_smoothing2 = 17;
-    optional float smoothing_factor2 = 18;
+    optional float smoothing_inner2 = 18;
     optional uint32 analog_error2 = 19;
     // Dynamic EMA smoothing range. Legacy smoothing_factor values map to *_min and *_max equally.
-    optional float smoothing_factor_min = 32;
-    optional float smoothing_factor_max = 33;
-    optional float smoothing_factor2_min = 34;
-    optional float smoothing_factor2_max = 35;
+    optional float smoothing_outer = 32;
+    optional float smoothing_outer2 = 33;
+    optional float smoothing_factor_min = 34;
+    optional float smoothing_factor_max = 35;
+    optional float smoothing_factor2_min = 36;
+    optional float smoothing_factor2_max = 37;
     // Stick 2 deadzone/calibration settings are intentionally separate from stick 1 for Web Configurator controls.
     optional uint32 inner_deadzone2 = 20;
     optional uint32 outer_deadzone2 = 21;

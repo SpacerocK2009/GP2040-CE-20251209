@@ -42,7 +42,7 @@ const ANALOG_ERROR_RATES = [
 	{ label: '15%', value: 821 },
 ];
 
-// TODO: Add Analog section UI fields for smoothing_factor_min/max and smoothing_factor2_min/max.
+// TODO: Add Analog section UI fields for smoothing_outer/max and smoothing_outer2/max.
 export const analogScheme = {
 	AnalogInputEnabled: yup.number().required().label('Analog Input Enabled'),
 	analogAdc1PinX: yup
@@ -118,13 +118,21 @@ export const analogScheme = {
 		.number()
 		.label('Analog Smoothing 2')
 		.validateRangeWhenValue('AnalogInputEnabled', 0, 1),
-	smoothing_factor: yup
+	smoothing_inner: yup
 		.number()
-		.label('Smoothing Factor')
+		.label('Smoothing Strength (Center)')
 		.validateRangeWhenValue('AnalogInputEnabled', 0, 100),
-	smoothing_factor2: yup
+	smoothing_outer: yup
 		.number()
-		.label('Smoothing Factor 2')
+		.label('Smoothing Strength (Max)')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 100),
+	smoothing_inner2: yup
+		.number()
+		.label('Smoothing Strength 2 (Center)')
+		.validateRangeWhenValue('AnalogInputEnabled', 0, 100),
+	smoothing_outer2: yup
+		.number()
+		.label('Smoothing Strength 2 (Max)')
 		.validateRangeWhenValue('AnalogInputEnabled', 0, 100),
 	analog_error: yup
 		.number()
@@ -189,8 +197,10 @@ export const analogState = {
 	auto_calibrate2: 0,
 	analog_smoothing: 0,
 	analog_smoothing2: 0,
-	smoothing_factor: 5,
-	smoothing_factor2: 5,
+	smoothing_inner: 5,
+	smoothing_outer: 5,
+	smoothing_inner2: 5,
+	smoothing_outer2: 5,
 	analog_error: 1,
 	analog_error2: 1,
 	// Per-stick calibration bounds are persisted by firmware; defaults keep legacy 12-bit ADC behavior.
@@ -350,13 +360,27 @@ const Analog = ({ values, errors, handleChange, handleCheckbox }: AddonPropTypes
 									<FormControl
 										hidden={!values.analog_smoothing}
 										type="number"
-										label={t('AddonsConfig:smoothing-factor')}
-										name="smoothing_factor"
+										label="スムージング強度（中心）"
+										name="smoothing_inner"
 										className="form-control-sm"
 										groupClassName="col-sm-3 mb-3"
-										value={values.smoothing_factor}
-										error={errors.smoothing_factor}
-										isInvalid={Boolean(errors.smoothing_factor)}
+										value={values.smoothing_inner}
+										error={errors.smoothing_inner}
+										isInvalid={Boolean(errors.smoothing_inner)}
+										onChange={handleChange}
+										min={0}
+										max={100}
+									/>
+									<FormControl
+										hidden={!values.analog_smoothing}
+										type="number"
+										label="スムージング強度（最大）"
+										name="smoothing_outer"
+										className="form-control-sm"
+										groupClassName="col-sm-3 mb-3"
+										value={values.smoothing_outer}
+										error={errors.smoothing_outer}
+										isInvalid={Boolean(errors.smoothing_outer)}
 										onChange={handleChange}
 										min={0}
 										max={100}
@@ -517,13 +541,27 @@ const Analog = ({ values, errors, handleChange, handleCheckbox }: AddonPropTypes
 									<FormControl
 										hidden={!values.analog_smoothing2}
 										type="number"
-										label={t('AddonsConfig:smoothing-factor')}
-										name="smoothing_factor2"
+										label="スムージング強度（中心）"
+										name="smoothing_inner2"
 										className="form-control-sm"
 										groupClassName="col-sm-3 mb-3"
-										value={values.smoothing_factor2}
-										error={errors.smoothing_factor2}
-										isInvalid={Boolean(errors.smoothing_factor2)}
+										value={values.smoothing_inner2}
+										error={errors.smoothing_inner2}
+										isInvalid={Boolean(errors.smoothing_inner2)}
+										onChange={handleChange}
+										min={0}
+										max={100}
+									/>
+									<FormControl
+										hidden={!values.analog_smoothing2}
+										type="number"
+										label="スムージング強度（最大）"
+										name="smoothing_outer2"
+										className="form-control-sm"
+										groupClassName="col-sm-3 mb-3"
+										value={values.smoothing_outer2}
+										error={errors.smoothing_outer2}
+										isInvalid={Boolean(errors.smoothing_outer2)}
 										onChange={handleChange}
 										min={0}
 										max={100}
