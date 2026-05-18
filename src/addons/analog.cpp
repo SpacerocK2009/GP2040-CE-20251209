@@ -17,6 +17,13 @@
 #define ANALOG_CALIBRATION_SAVE_DELAY_MS 5000
 #define ANALOG_CALIBRATION_MIN_RANGE 16
 
+static float toSmoothingWeight(float smoothingStrength) {
+    // UI exposes "smoothing strength" where 0 means no smoothing and 100 means strongest smoothing.
+    // EMA expects the weight of the *new* sample, so invert strength into new-sample weight.
+    // strength 0 -> weight 1.0f, strength 100 -> weight 0.0f.
+    return std::clamp(1.0f - (smoothingStrength / 100.0f), 0.0f, 1.0f);
+}
+
 bool AnalogInput::available() {
     return Storage::getInstance().getAddonOptions().analogOptions.enabled;
 }
@@ -30,9 +37,9 @@ void AnalogInput::setup() {
     adc_pairs[0].analog_invert = analogOptions.analogAdc1Invert;
     adc_pairs[0].analog_dpad = analogOptions.analogAdc1Mode;
     adc_pairs[0].ema_option = analogOptions.analog_smoothing;
-    adc_pairs[0].ema_smoothing = analogOptions.smoothing_inner / 100.0f;
+    adc_pairs[0].ema_smoothing = toSmoothingWeight(analogOptions.smoothing_inner);
     adc_pairs[0].ema_smoothing_min = adc_pairs[0].ema_smoothing;
-    adc_pairs[0].ema_smoothing_max = analogOptions.has_smoothing_outer ? analogOptions.smoothing_outer / 100.0f : adc_pairs[0].ema_smoothing;
+    adc_pairs[0].ema_smoothing_max = analogOptions.has_smoothing_outer ? toSmoothingWeight(analogOptions.smoothing_outer) : adc_pairs[0].ema_smoothing;
     adc_pairs[0].error_rate = analogOptions.analog_error / 1000.0f;
     adc_pairs[0].in_deadzone = analogOptions.inner_deadzone / 100.0f;
     adc_pairs[0].out_deadzone = analogOptions.outer_deadzone / 100.0f;
@@ -47,9 +54,9 @@ void AnalogInput::setup() {
     adc_pairs[1].analog_invert = analogOptions.analogAdc2Invert;
     adc_pairs[1].analog_dpad = analogOptions.analogAdc2Mode;
     adc_pairs[1].ema_option = analogOptions.analog_smoothing2;
-    adc_pairs[1].ema_smoothing = analogOptions.smoothing_inner2 / 100.0f;
+    adc_pairs[1].ema_smoothing = toSmoothingWeight(analogOptions.smoothing_inner2);
     adc_pairs[1].ema_smoothing_min = adc_pairs[1].ema_smoothing;
-    adc_pairs[1].ema_smoothing_max = analogOptions.has_smoothing_outer2 ? analogOptions.smoothing_outer2 / 100.0f : adc_pairs[1].ema_smoothing;
+    adc_pairs[1].ema_smoothing_max = analogOptions.has_smoothing_outer2 ? toSmoothingWeight(analogOptions.smoothing_outer2) : adc_pairs[1].ema_smoothing;
     adc_pairs[1].error_rate = analogOptions.analog_error2 / 1000.0f;
     adc_pairs[1].in_deadzone = analogOptions.inner_deadzone2 / 100.0f;
     adc_pairs[1].out_deadzone = analogOptions.outer_deadzone2 / 100.0f;
@@ -129,10 +136,6 @@ void AnalogInput::process() {
                 adc_pairs[i].analog_invert == InvertMode::INVERT_XY) {
                 adc_pairs[i].x_value = ANALOG_MAX - adc_pairs[i].x_value;
             }
-            if (adc_pairs[i].ema_option) {
-                adc_pairs[i].x_value = emaCalculation(i, adc_pairs[i].x_value, adc_pairs[i].x_ema);
-                adc_pairs[i].x_ema = adc_pairs[i].x_value;
-            }
         }
         // Read Y-Axis
         if (isValidPin(adc_pairs[i].y_pin)) {
@@ -141,10 +144,14 @@ void AnalogInput::process() {
                 adc_pairs[i].analog_invert == InvertMode::INVERT_XY) {
                 adc_pairs[i].y_value = ANALOG_MAX - adc_pairs[i].y_value;
             }
-            if (adc_pairs[i].ema_option) {
-                adc_pairs[i].y_value = emaCalculation(i, adc_pairs[i].y_value, adc_pairs[i].y_ema);
-                adc_pairs[i].y_ema = adc_pairs[i].y_value;
-            }
+        }
+        // Calculate magnitude from this frame's raw X/Y so dynamic smoothing uses current stick position.
+        adc_pairs[i].xy_magnitude = magnitudeCalculation(i, adc_pairs[i]);
+        if (adc_pairs[i].ema_option) {
+            adc_pairs[i].x_value = emaCalculation(i, adc_pairs[i].x_value, adc_pairs[i].x_ema);
+            adc_pairs[i].x_ema = adc_pairs[i].x_value;
+            adc_pairs[i].y_value = emaCalculation(i, adc_pairs[i].y_value, adc_pairs[i].y_ema);
+            adc_pairs[i].y_ema = adc_pairs[i].y_value;
         }
         // Look for dead-zones and circularity
         adc_pairs[i].xy_magnitude = magnitudeCalculation(i, adc_pairs[i]);
