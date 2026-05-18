@@ -1755,12 +1755,14 @@ std::string setAddonOptions()
     docToValue(analogOptions.auto_calibrate2, doc, "auto_calibrate2");
     docToValue(analogOptions.analog_smoothing, doc, "analog_smoothing");
     docToValue(analogOptions.analog_smoothing2, doc, "analog_smoothing2");
-    docToValue(analogOptions.smoothing_factor, doc, "smoothing_factor");
-    docToValue(analogOptions.smoothing_factor_min, doc, "smoothing_factor_min");
-    docToValue(analogOptions.smoothing_factor_max, doc, "smoothing_factor_max");
-    docToValue(analogOptions.smoothing_factor2, doc, "smoothing_factor2");
-    docToValue(analogOptions.smoothing_factor2_min, doc, "smoothing_factor2_min");
-    docToValue(analogOptions.smoothing_factor2_max, doc, "smoothing_factor2_max");
+    docToValue(analogOptions.smoothing_inner, doc, "smoothing_factor");
+    docToValue(analogOptions.smoothing_inner, doc, "smoothing_inner");
+    docToValue(analogOptions.smoothing_outer, doc, "smoothing_factor_max");
+    docToValue(analogOptions.smoothing_outer, doc, "smoothing_outer");
+    docToValue(analogOptions.smoothing_inner2, doc, "smoothing_factor2");
+    docToValue(analogOptions.smoothing_inner2, doc, "smoothing_inner2");
+    docToValue(analogOptions.smoothing_outer2, doc, "smoothing_factor2_max");
+    docToValue(analogOptions.smoothing_outer2, doc, "smoothing_outer2");
     docToValue(analogOptions.analog_error, doc, "analog_error");
     docToValue(analogOptions.analog_error2, doc, "analog_error2");
     // Per-stick calibration bounds are exposed for Web Configurator calibration/reset flows.
@@ -2222,12 +2224,10 @@ std::string getAddonOptions()
     writeDoc(doc, "auto_calibrate2", analogOptions.auto_calibrate2);
     writeDoc(doc, "analog_smoothing", analogOptions.analog_smoothing);
     writeDoc(doc, "analog_smoothing2", analogOptions.analog_smoothing2);
-    writeDoc(doc, "smoothing_factor", analogOptions.smoothing_factor);
-    writeDoc(doc, "smoothing_factor_min", analogOptions.smoothing_factor_min);
-    writeDoc(doc, "smoothing_factor_max", analogOptions.smoothing_factor_max);
-    writeDoc(doc, "smoothing_factor2", analogOptions.smoothing_factor2);
-    writeDoc(doc, "smoothing_factor2_min", analogOptions.smoothing_factor2_min);
-    writeDoc(doc, "smoothing_factor2_max", analogOptions.smoothing_factor2_max);
+    writeDoc(doc, "smoothing_inner", analogOptions.smoothing_inner);
+    writeDoc(doc, "smoothing_outer", analogOptions.smoothing_outer);
+    writeDoc(doc, "smoothing_inner2", analogOptions.smoothing_inner2);
+    writeDoc(doc, "smoothing_outer2", analogOptions.smoothing_outer2);
     writeDoc(doc, "analog_error", analogOptions.analog_error);
     writeDoc(doc, "analog_error2", analogOptions.analog_error2);
     // Per-stick calibration bounds are exposed for Web Configurator calibration/reset flows.
