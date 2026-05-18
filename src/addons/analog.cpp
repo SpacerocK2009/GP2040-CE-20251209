@@ -158,6 +158,8 @@ void AnalogInput::process() {
         if (adc_pairs[i].xy_magnitude < adc_pairs[i].in_deadzone) {
             adc_pairs[i].x_value = ANALOG_CENTER;
             adc_pairs[i].y_value = ANALOG_CENTER;
+            adc_pairs[i].x_ema = ANALOG_CENTER;
+            adc_pairs[i].y_ema = ANALOG_CENTER;
         } else {
             radialDeadzone(i, adc_pairs[i]);
         }
