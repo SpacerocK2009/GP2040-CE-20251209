@@ -1,10 +1,16 @@
 #include "drivers/switchpro/SwitchProDriver.h"
+
+#include <algorithm>
+#include <cstdio>
 #include "drivers/shared/driverhelper.h"
 #include "storagemanager.h"
 #include "pico/rand.h"
 
-// force a report to be sent every X ms
-#define SWITCH_PRO_KEEPALIVE_TIMER 5
+#if SWITCH_PRO_USB_DIAG_ENABLE
+#define SWITCH_PRO_USB_DIAG_PRINTF(...) std::printf(__VA_ARGS__)
+#else
+#define SWITCH_PRO_USB_DIAG_PRINTF(...) do { } while (0)
+#endif
 
 void SwitchProDriver::initialize() {
     //stdio_init_all();
@@ -13,6 +19,16 @@ void SwitchProDriver::initialize() {
     last_report_counter = 0;
     handshakeCounter = 0;
     isReady = false;
+    isInitialized = false;
+    isReportQueued = false;
+    reportSent = false;
+    queuedReportHead = 0;
+    queuedReportTail = 0;
+    queuedReportCount = 0;
+
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    usbDiagnostics = { };
+#endif
 
     deviceInfo = {
         .majorVersion = 0x04,
@@ -93,6 +109,9 @@ void SwitchProDriver::initialize() {
 }
 
 bool SwitchProDriver::process(Gamepad * gamepad) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    uint32_t processStartUs = to_us_since_boot(get_absolute_time());
+#endif
     uint32_t now = to_ms_since_boot(get_absolute_time());
     reportSent = false;
 
@@ -127,7 +146,7 @@ bool SwitchProDriver::process(Gamepad * gamepad) {
     uint16_t scaleLeftStickY = scale16To12(gamepad->state.ly);
     uint16_t scaleRightStickX = scale16To12(gamepad->state.rx);
     uint16_t scaleRightStickY = scale16To12(gamepad->state.ry);
-    
+
     switchReport.inputs.leftStick.setX(std::min(std::max(scaleLeftStickX,leftMinX), leftMaxX));
     switchReport.inputs.leftStick.setY(-std::min(std::max(scaleLeftStickY,leftMinY), leftMaxY));
     switchReport.inputs.rightStick.setX(std::min(std::max(scaleRightStickX,rightMinX), rightMaxX));
@@ -140,14 +159,8 @@ bool SwitchProDriver::process(Gamepad * gamepad) {
 	if (tud_suspended())
 		tud_remote_wakeup();
 
-    if (isReportQueued) {
-        if ((now - last_report_timer) > SWITCH_PRO_KEEPALIVE_TIMER) {
-            if (tud_hid_ready() && sendReport(queuedReportID, report, 64) == true ) {
-            }
-            isReportQueued = false;
-            last_report_timer = now;
-        }
-        reportSent = true;
+    if (isReportQueued && ((now - last_report_timer) > SWITCH_PRO_KEEPALIVE_TIMER)) {
+        reportSent = sendQueuedReport(now);
     }
 
     Gamepad * processedGamepad = Storage::getInstance().GetProcessedGamepad();
@@ -155,33 +168,27 @@ bool SwitchProDriver::process(Gamepad * gamepad) {
     processedGamepad->auxState.playerID.ledValue = playerID;
     processedGamepad->auxState.playerID.value = playerID;
 
-    if (isReady && !reportSent) {
+    if (isReady && !reportSent && !isReportQueued) {
         if ((now - last_report_timer) > SWITCH_PRO_KEEPALIVE_TIMER) {
-            switchReport.timestamp = last_report_counter;
-            void * inputReport = &switchReport;
-            uint16_t report_size = sizeof(switchReport);
-            if (memcmp(last_report, inputReport, report_size) != 0) {
-                // HID ready + report sent, copy previous report
-                if (tud_hid_ready() && sendReport(0, inputReport, report_size) == true ) {
-                    memcpy(last_report, inputReport, report_size);
-                    reportSent = true;
-                }
-
-                last_report_timer = now;
-            }
+            reportSent = sendInputReport(now);
         }
-    } else {
-        if (!isInitialized) {
-            // send identification
-            sendIdentify();
-            if (tud_hid_ready() && tud_hid_report(0, report, 64) == true) {
-                isInitialized = true;
-                reportSent = true;
-            }
-
+    } else if (!isInitialized && !isReportQueued) {
+        // send identification
+        sendIdentify();
+        if (tud_hid_ready() && tud_hid_report(0, report, 64) == true) {
+            isInitialized = true;
+            reportSent = true;
             last_report_timer = now;
+            updateReportSuccessInterval(now);
         }
     }
+
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    uint32_t processTimeUs = to_us_since_boot(get_absolute_time()) - processStartUs;
+    if (processTimeUs > usbDiagnostics.maxProcessTimeUs) {
+        usbDiagnostics.maxProcessTimeUs = processTimeUs;
+    }
+#endif
 
     return reportSent;
 }
@@ -215,12 +222,118 @@ void SwitchProDriver::sendSubCommand(uint8_t subCommand) {
 
 bool SwitchProDriver::sendReport(uint8_t reportID, void const* reportData, uint16_t reportLength) {
     bool result = tud_hid_report(reportID, reportData, reportLength);
-    if (last_report_counter < 255) {
-        last_report_counter++;
-    } else {
-        last_report_counter = 0;
+    if (result) {
+        if (last_report_counter < 255) {
+            last_report_counter++;
+        } else {
+            last_report_counter = 0;
+        }
     }
     return result;
+}
+
+bool SwitchProDriver::queueReport(uint8_t reportID, const uint8_t* reportData, uint8_t reportLength) {
+    if (queuedReportCount >= SWITCH_PRO_REPORT_QUEUE_SIZE) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+        usbDiagnostics.queuedReportOverflowCount++;
+#endif
+        SWITCH_PRO_USB_DIAG_PRINTF("SwitchPro queued report overflow: reportID=%u length=%u\n", reportID, reportLength);
+        return false;
+    }
+
+    QueuedReport *queuedReport = &queuedReports[queuedReportTail];
+    queuedReport->reportID = reportID;
+    queuedReport->reportLength = std::min<uint8_t>(reportLength, SWITCH_PRO_ENDPOINT_SIZE);
+    memcpy(queuedReport->reportData, reportData, queuedReport->reportLength);
+
+    queuedReportTail = (queuedReportTail + 1) % SWITCH_PRO_REPORT_QUEUE_SIZE;
+    queuedReportCount++;
+    isReportQueued = true;
+
+    return true;
+}
+
+bool SwitchProDriver::sendQueuedReport(uint32_t now) {
+    if (queuedReportCount == 0) {
+        isReportQueued = false;
+        return false;
+    }
+
+    if (!tud_hid_ready()) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+        usbDiagnostics.queuedReportNotReadyCount++;
+#endif
+        SWITCH_PRO_USB_DIAG_PRINTF("SwitchPro queued report not ready: count=%u\n", queuedReportCount);
+        return false;
+    }
+
+    QueuedReport *queuedReport = &queuedReports[queuedReportHead];
+    if (!sendReport(queuedReport->reportID, queuedReport->reportData, queuedReport->reportLength)) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+        usbDiagnostics.queuedReportSendFailureCount++;
+#endif
+        SWITCH_PRO_USB_DIAG_PRINTF("SwitchPro queued report send failed: reportID=%u length=%u\n", queuedReport->reportID, queuedReport->reportLength);
+        return false;
+    }
+
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    usbDiagnostics.queuedReportSuccessCount++;
+#endif
+
+    queuedReportHead = (queuedReportHead + 1) % SWITCH_PRO_REPORT_QUEUE_SIZE;
+    queuedReportCount--;
+    isReportQueued = (queuedReportCount > 0);
+    last_report_timer = now;
+    updateReportSuccessInterval(now);
+
+    return true;
+}
+
+bool SwitchProDriver::sendInputReport(uint32_t now) {
+    switchReport.timestamp = last_report_counter;
+    void * inputReport = &switchReport;
+    uint16_t report_size = sizeof(switchReport);
+    if (memcmp(last_report, inputReport, report_size) == 0) {
+        return false;
+    }
+
+    if (!tud_hid_ready()) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+        usbDiagnostics.inputReportNotReadyCount++;
+#endif
+        SWITCH_PRO_USB_DIAG_PRINTF("SwitchPro input report not ready\n");
+        return false;
+    }
+
+    if (!sendReport(0, inputReport, report_size)) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+        usbDiagnostics.inputReportSendFailureCount++;
+#endif
+        SWITCH_PRO_USB_DIAG_PRINTF("SwitchPro input report send failed: length=%u\n", report_size);
+        return false;
+    }
+
+    memcpy(last_report, inputReport, report_size);
+    last_report_timer = now;
+    updateReportSuccessInterval(now);
+
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    usbDiagnostics.inputReportSuccessCount++;
+#endif
+
+    return true;
+}
+
+void SwitchProDriver::updateReportSuccessInterval(uint32_t now) {
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    if (usbDiagnostics.lastReportSuccessMs != 0) {
+        uint32_t interval = now - usbDiagnostics.lastReportSuccessMs;
+        if (interval > usbDiagnostics.maxReportSuccessIntervalMs) {
+            usbDiagnostics.maxReportSuccessIntervalMs = interval;
+        }
+    }
+    usbDiagnostics.lastReportSuccessMs = now;
+#endif
 }
 
 void SwitchProDriver::handleConfigReport(uint8_t switchReportID, uint8_t switchReportSubID, const uint8_t *reportData, uint16_t reportLength) {
@@ -269,7 +382,7 @@ void SwitchProDriver::handleConfigReport(uint8_t switchReportID, uint8_t switchR
             break;
     }
 
-    if (canSend) isReportQueued = true;
+    if (canSend) queueReport(queuedReportID, report, SWITCH_PRO_ENDPOINT_SIZE);
 }
 
 void SwitchProDriver::handleFeatureReport(uint8_t switchReportID, uint8_t switchReportSubID, const uint8_t *reportData, uint16_t reportLength) {
@@ -480,7 +593,7 @@ void SwitchProDriver::handleFeatureReport(uint8_t switchReportID, uint8_t switch
             break;
     }
 
-    if (canSend) isReportQueued = true;
+    if (canSend) queueReport(queuedReportID, report, SWITCH_PRO_ENDPOINT_SIZE);
 }
 
 void SwitchProDriver::set_report(uint8_t report_id, hid_report_type_t report_type, const uint8_t *buffer, uint16_t bufsize) {
