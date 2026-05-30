@@ -12,6 +12,11 @@
 #include "drivers/switchpro/SwitchProDescriptors.h"
 
 #define SWITCH_PRO_KEEPALIVE_TIMER 5
+#define SWITCH_PRO_REPORT_QUEUE_SIZE 4
+
+#ifndef SWITCH_PRO_USB_DIAG_ENABLE
+#define SWITCH_PRO_USB_DIAG_ENABLE 0
+#endif
 
 class SwitchProDriver : public GPDriver {
 public:
@@ -32,6 +37,17 @@ public:
 private:
     uint8_t report[SWITCH_PRO_ENDPOINT_SIZE] = { };
     uint8_t last_report[SWITCH_PRO_ENDPOINT_SIZE] = { };
+
+    struct QueuedReport {
+        uint8_t reportID = 0;
+        uint8_t reportLength = 0;
+        uint8_t reportData[SWITCH_PRO_ENDPOINT_SIZE] = { };
+    };
+
+    QueuedReport queuedReports[SWITCH_PRO_REPORT_QUEUE_SIZE];
+    uint8_t queuedReportHead = 0;
+    uint8_t queuedReportTail = 0;
+    uint8_t queuedReportCount = 0;
     SwitchProReport switchReport;
     uint8_t last_report_counter;
     uint32_t last_report_timer;
@@ -54,10 +70,31 @@ private:
     bool isIMUEnabled = false;
     bool isVibrationEnabled = false;
 
+#if SWITCH_PRO_USB_DIAG_ENABLE
+    struct SwitchProUSBDiagnostics {
+        uint32_t inputReportSuccessCount = 0;
+        uint32_t inputReportNotReadyCount = 0;
+        uint32_t inputReportSendFailureCount = 0;
+        uint32_t queuedReportSuccessCount = 0;
+        uint32_t queuedReportNotReadyCount = 0;
+        uint32_t queuedReportSendFailureCount = 0;
+        uint32_t queuedReportOverflowCount = 0;
+        uint32_t maxProcessTimeUs = 0;
+        uint32_t maxReportSuccessIntervalMs = 0;
+        uint32_t lastReportSuccessMs = 0;
+    };
+
+    SwitchProUSBDiagnostics usbDiagnostics;
+#endif
+
     void sendIdentify();
     void sendSubCommand(uint8_t subCommand);
 
     bool sendReport(uint8_t reportID, const void* reportData, uint16_t reportLength);
+    bool queueReport(uint8_t reportID, const uint8_t* reportData, uint8_t reportLength);
+    bool sendQueuedReport(uint32_t now);
+    bool sendInputReport(uint32_t now);
+    void updateReportSuccessInterval(uint32_t now);
 
     void readSPIFlash(uint8_t* dest, uint32_t address, uint8_t size);
 
