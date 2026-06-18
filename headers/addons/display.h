@@ -15,14 +15,12 @@
 #include "GPGFX_UI_types.h"
 #include "GPGFX_UI_screens.h"
 #include "GPGFX_UI_widgets.h"
-#include "drivers/p5general/P5GeneralDriver.h"
 #include "gpaddon.h"
 #include "gamepad.h"
 #include "storagemanager.h"
 #include "peripheralmanager.h"
 #include "peripheral_i2c.h"
 #include "peripheral_spi.h"
-#include "pico/time.h"
 
 #ifndef HAS_I2C_DISPLAY
 #define HAS_I2C_DISPLAY 0
@@ -50,6 +48,10 @@
 
 #ifndef DISPLAY_SIZE
 #define DISPLAY_SIZE GPGFX_DisplaySize::SIZE_128x64
+#endif
+
+#ifndef DISPLAY_FRAME_INTERVAL_MS
+#define DISPLAY_FRAME_INTERVAL_MS 33
 #endif
 
 #ifndef DISPLAY_FLIP
@@ -213,6 +215,7 @@ private:
     int32_t displaySaverTimer;
     uint8_t displayIsPowerOn = 1;
     uint32_t prevMillis;
+    uint32_t prevDrawMillis;
     std::string statusBar;
     bool configMode;
     GPGFX* gpDisplay;
@@ -228,17 +231,7 @@ private:
     GamepadButtonMapping *mapMenuToggle;
     GamepadButtonMapping *mapMenuSelect;
     std::string errorMessage;
-    absolute_time_t nextRenderTime;
-    uint32_t renderIntervalUs = 16000;
-    uint8_t renderPageLimit = 0;
-    uint32_t busyDeferUs = 4000;
-    uint32_t idleRenderIntervalUs = 16000;
-    absolute_time_t nextIdleRenderTime;
-    GamepadState lastGamepadState = {};
     bool disableWhenP5General = false;
-    bool p5GeneralOledSafeMode = true;
-    uint8_t p5GeneralOledMode = 0;
-    P5GeneralDriver* p5GeneralDriver = nullptr;
     bool isP5GeneralMode = false;
 };
 
