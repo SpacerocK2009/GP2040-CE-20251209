@@ -144,7 +144,7 @@ bool DisplayAddon::updateDisplayScreen() {
     return true;
 }
 
-bool DisplayAddon::isDisplayPowerOff()
+bool DisplayAddon::isDisplayPowerOff(uint32_t now)
 {
     Gamepad * gamepad = Storage::getInstance().GetGamepad();
 
@@ -159,7 +159,7 @@ bool DisplayAddon::isDisplayPowerOff()
 
     if (!displaySaverTimeout) return false;
 
-    float diffTime = getMillis() - prevMillis;
+    float diffTime = now - prevMillis;
     displaySaverTimer -= diffTime;
     if (!!displaySaverTimeout && (gamepad->state.buttons || gamepad->state.dpad)) {
         displaySaverTimer = displaySaverTimeout;
@@ -175,7 +175,7 @@ bool DisplayAddon::isDisplayPowerOff()
         }
     }
 
-    prevMillis = getMillis();
+    prevMillis = now;
 
     return ((!!displaySaverTimeout && displaySaverTimer <= 0) && (displaySaverMode == DisplaySaverMode::DISPLAY_SAVER_DISPLAY_OFF));
 }
@@ -203,17 +203,18 @@ void DisplayAddon::setMenuMappings()
 }
 
 void DisplayAddon::process() {
+    uint32_t now = getMillis();
+
     // If GPDisplay is not loaded or we're in standard mode with display power off enabled
     if (gpDisplay->getDriver() == nullptr ||
-        (!configMode && isDisplayPowerOff())) {
+        (!configMode && isDisplayPowerOff(now))) {
         return;
     }
 
-    uint32_t drawMillis = getMillis();
-    if ((drawMillis - prevDrawMillis) < DISPLAY_FRAME_INTERVAL_MS) {
+    if ((now - prevDrawMillis) < DISPLAY_FRAME_INTERVAL_MS) {
         return;
     }
-    prevDrawMillis = drawMillis;
+    prevDrawMillis = now;
 
     // Core0 requested a new display mode
     if (nextDisplayMode != currDisplayMode ) {
