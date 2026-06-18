@@ -209,7 +209,7 @@ private:
     bool updateDisplayScreen();
     void setMenuMappings();
     const DisplayOptions& getDisplayOptions();
-    bool isDisplayPowerOff();
+    bool isDisplayPowerOff(uint32_t now);
     void setDisplayPower(uint8_t status);
     uint32_t displaySaverTimeout = 0;
     int32_t displaySaverTimer;
