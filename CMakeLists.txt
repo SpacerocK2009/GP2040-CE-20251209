@@ -58,9 +58,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_PREBUILT_PICO_TOOLS "Use prebuilt pioasm & picotool from tools/prebuilt" ON)
 
 if(USE_PREBUILT_PICO_TOOLS AND WIN32)
-  set(PICO_SDK_PIOASM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/prebuilt/pioasm.exe" CACHE FILEPATH "Path to prebuilt pioasm")
-  set(PICO_SDK_PICOTOOL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/prebuilt/picotool.exe" CACHE FILEPATH "Path to prebuilt picotool")
-  set(PICO_SDK_SKIP_BUILD_TOOLS 1 CACHE BOOL "Skip building host tools")
+  set(PREBUILT_TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tools/prebuilt")
+  # prebuilt PIO assembler
+  add_executable(pioasm IMPORTED GLOBAL)
+  set_target_properties(pioasm PROPERTIES IMPORTED_LOCATION "${PREBUILT_TOOLS_DIR}/pioasm.exe")
+  # prebuilt picotool
+  add_executable(picotool IMPORTED GLOBAL)
+  set_target_properties(picotool PROPERTIES IMPORTED_LOCATION "${PREBUILT_TOOLS_DIR}/picotool.exe")
 endif()
 
 # initialize the SDK based on PICO_SDK_PATH
