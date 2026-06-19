@@ -41,8 +41,6 @@ export default {
                 'inverted-label': '反色',
                 'power-management-header': '电源管理',
                 'turn-off-when-suspended': '挂起时关闭显示',
-                'disable-when-p5general': 'P5General 模式下禁用 OLED',
-                'p5general-oled-safe-mode': 'P5General 模式下降低 OLED 刷新（更安全）',
                 'input-history-label': '输入历史',
                 'display-state': {
 			disabled: '禁用',

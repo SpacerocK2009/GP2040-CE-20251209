@@ -44,17 +44,6 @@ export default {
                 'inverted-label': 'Inverted',
                 'power-management-header': 'Power Management',
                 'turn-off-when-suspended': 'Turn Off When Suspended',
-                'disable-when-p5general': 'Disable OLED in P5General mode',
-                'p5general-oled-safe-mode': 'Throttle OLED refresh in P5General (safer)',
-                'p5general-oled-mode': 'P5General OLED pacing',
-                'p5general-oled-mode-help':
-                        'Adjust how aggressively OLED refreshes are spaced out while using P5General on PS5; idle periods auto-throttle even further.',
-                'p5general-oled-mode-descriptions': {
-                        safe: 'Balanced: chunked pages at ~32 ms cadence with a ~240 ms idle redraw (extra defer when "safe" is on).',
-                        low: 'Low: change-driven, slowest updates (~120 ms minimum, ~320 ms idle) and one page per tick.',
-                        medium: 'Medium: default pacing (~64 ms minimum, ~200 ms idle) sending two pages per tick.',
-                        high: 'High: fastest redraw (~32 ms minimum, ~120–180 ms idle) up to four pages per tick.',
-                },
                 'input-history-label': 'Input History',
                 'display-state': {
                         disabled: 'Disabled',

@@ -231,8 +231,6 @@ private:
     GamepadButtonMapping *mapMenuToggle;
     GamepadButtonMapping *mapMenuSelect;
     std::string errorMessage;
-    bool disableWhenP5General = false;
-    bool isP5GeneralMode = false;
 };
 
 #endif

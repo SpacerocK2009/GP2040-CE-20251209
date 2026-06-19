@@ -5,14 +5,10 @@ custom_commit: 4bf608ffd41a5dd808882750eab3b9f34324c99d
 # カスタマイズ概要
 
 ## WebConfig
-### P5General OLED制御をWebConfigに追加
-- 目的: P5General利用時のOLED負荷をWeb UIから抑制・停止できるようにするため。
-- 変更点: DisplayConfigページに「P5General OLED間引き設定」「P5General時はOLED更新を抑制」「P5GeneralモードではOLEDを無効化」のスイッチとプルダウンを追加し、説明リストを表示。【F:docs/_customization_evidence/full.patch†L2214-L2369】
-- 影響範囲: WebConfig UIと送信されるdisplayOptions値。
-- 関連ファイル: www/src/Pages/DisplayConfig.jsx、各言語のDisplayConfigロケール。【F:docs/_customization_evidence/changed_files_name_status.txt†L31-L48】
-- 設定項目: disableWhenP5General, p5GeneralOledSafeMode, p5GeneralOledMode。
-- 注意点: P5General専用設定のため他モードでは無効。文言はロケール側に集約されている（要多言語反映）。【F:docs/_customization_evidence/full.patch†L13-L40】
-- 関連コミット: b500b821, 626fe3d1, 4cdde995, f81464cb, ad98695b。【F:docs/_customization_evidence/commits.txt†L1-L7】
+### P5General OLED制御UIの撤去
+- 目的: #1659/#1660/#1661 の取り込みによりP5General利用時のOLED書き込みに起因する認証遅延が解消されたため、専用のOLED抑制設定を撤去する。
+- 変更点: DisplayConfigページ、WebConfig API、保存設定、DisplayAddonからP5General専用OLEDオプションを削除し、共通のDISPLAY_FRAME_INTERVAL_MSに統一。
+- 影響範囲: WebConfig UIとdisplayOptions値。既存保存値 disableWhenP5General / p5GeneralOledSafeMode / p5GeneralOledMode は現行ファームウェアでは無視される。
 
 ### Grid Gradientプリセット設定UIの追加
 - 目的: コントローラ内蔵のGrid GradientアニメーションをWebConfigから配色・速度・プリセットを設定できるようにするため。
@@ -24,14 +20,10 @@ custom_commit: 4bf608ffd41a5dd808882750eab3b9f34324c99d
 - 関連コミット: e6515608, 9c1b4f35, 84d6ccba, 8281e143, c32fa3d9, 3399e96b, c08bfe9e, 5f1f7a92, 80301f7c, d0efd397, a720899e, 8225eb8a, e1587bdd, 5ad356aa, acf094ca, 34bd00ce, 9948046d, 5ec3b452。【F:docs/_customization_evidence/commits.txt†L8-L29】
 
 ## OLED
-### P5GeneralモードのOLED描画間引きと安全策
-- 目的: PS5 P5Generalドライバ使用時にI2C OLED更新が入力処理と競合するのを防ぎ、必要に応じて表示を無効化するため。
-- 変更点: DisplayAddonがP5Generalモードを検出し、disableWhenP5Generalやp5GeneralOledModeに応じてリフレッシュ間隔・ページ分割・アイドル再描画周期・I/O遅延を動的に設定。入力変化で即時描画、認証処理中のdefer、部分描画リセットを追加。【F:docs/_customization_evidence/full.patch†L473-L614】
-- 影響範囲: P5General入力モードのOLEDレンダリング周期とI2Cトラフィック。
-- 関連ファイル: src/addons/display.cpp、headers/addons/display.h、headers/drivers/p5general/P5GeneralDriver.h、src/drivers/p5general/P5GeneralDriver.cpp、docs/P5General_OLED_notes.md。【F:docs/_customization_evidence/changed_files_name_status.txt†L2-L3】【F:docs/_customization_evidence/changed_files_name_status.txt†L11-L12】【F:docs/_customization_evidence/changed_files_name_status.txt†L17-L24】
-- 設定項目: disableWhenP5General, p5GeneralOledSafeMode, p5GeneralOledMode（0:Safe/1:Low/2:Medium/3:High）。
-- 注意点: WebConfigに保存されていない場合はMedium(2)とSafeモードがデフォルト。P5General以外では従来の8ms周期を維持。詳細なチューニング値はP5General_OLED_notes.mdを参照。必要に応じ再確認（要確認）。【F:docs/_customization_evidence/full.patch†L13-L40】【F:docs/_customization_evidence/full.patch†L509-L543】
-- 関連コミット: b500b821, 626fe3d1, 4cdde995, f81464cb。【F:docs/_customization_evidence/commits.txt†L1-L7】
+### P5GeneralモードのOLED描画
+- 目的: P5Generalでも通常のOLED更新経路を使用し、ボードごとの差分はDISPLAY_FRAME_INTERVAL_MSのビルド時上書きで扱う。
+- 変更点: P5Generalモード検出によるOLED無効化・専用ペーシングを削除し、DisplayAddonの描画間隔を共通のDISPLAY_FRAME_INTERVAL_MSに統一。
+- 影響範囲: 全入力モードのOLEDレンダリング周期。P5General専用の保存設定はなし。
 
 ## LED
 ### Grid Gradientアニメーションの追加
@@ -62,14 +54,12 @@ custom_commit: 4bf608ffd41a5dd808882750eab3b9f34324c99d
 - 注意点: 追加ファイル未反映でビルド失敗する可能性があったための登録。関連コミットはGrid Gradient追加系列を参照。【F:docs/_customization_evidence/commits.txt†L8-L29】
 
 ## その他
-### P5General OLEDテクニカルノートの追加
-- 目的: P5GeneralモードにおけるOLED間引きの設計・運用上の注意を文書化するため。
-- 変更点: docs/P5General_OLED_notes.mdを追加し、概要、現在のデフォルト確認、スケジューリング方針、TinyUSBとの干渉回避について記載。【F:docs/_customization_evidence/full.patch†L13-L40】
+### P5General OLEDテクニカルノートの更新
+- 目的: P5General専用OLED制御の撤去後の現行動作を文書化するため。
+- 変更点: docs/P5General_OLED_notes.mdを、共通DISPLAY_FRAME_INTERVAL_MSを使用する説明と削除済み設定項目の一覧に更新。
 - 影響範囲: ドキュメントのみ。
-- 関連ファイル: docs/P5General_OLED_notes.md。【F:docs/_customization_evidence/changed_files_name_status.txt†L2-L2】
+- 関連ファイル: docs/P5General_OLED_notes.md。
 - 設定項目: なし。
-- 注意点: WebConfig文言と整合させる必要あり（要確認）。
-- 関連コミット: ad98695b（ガイダンス整理）。【F:docs/_customization_evidence/commits.txt†L5-L5】
 
 # 付録: 変更ファイル一覧
 ```
