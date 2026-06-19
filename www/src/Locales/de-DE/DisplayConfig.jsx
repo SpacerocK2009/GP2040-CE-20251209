@@ -39,7 +39,5 @@ export default {
                         'Timeout für den Bildschirmschoner (Minuten)',
                 'inverted-label': 'Invertiert',
                 'turn-off-when-suspended': 'Ausschalten im Ruhezustand',
-                'disable-when-p5general': 'OLED im P5General-Modus deaktivieren',
-                'p5general-oled-safe-mode': 'OLED-Aktualisierung in P5General verlangsamen (sicherer)',
         },
 };

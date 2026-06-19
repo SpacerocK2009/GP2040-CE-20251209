@@ -18,14 +18,11 @@ bool DisplayAddon::available() {
     const DisplayOptions& options = Storage::getInstance().getDisplayOptions();
     bool result = false;
 
-    isP5GeneralMode = (DriverManager::getInstance().getInputMode() == INPUT_MODE_P5GENERAL);
-    disableWhenP5General = options.disableWhenP5General && isP5GeneralMode;
-
     // create the gfx interface
     gpDisplay = new GPGFX();
     gpOptions = gpDisplay->getAvailableDisplay(GPGFX_DisplayType::DISPLAY_TYPE_NONE);
     if ( gpOptions.displayType != GPGFX_DisplayType::DISPLAY_TYPE_NONE ) {
-        if ( options.enabled && !disableWhenP5General ) {
+        if ( options.enabled ) {
             result = true;
         } else {
             // Power off our display if its available but disabled in config
