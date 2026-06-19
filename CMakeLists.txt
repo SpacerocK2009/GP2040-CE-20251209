@@ -55,6 +55,14 @@ include(CMakePrintHelpers)
 # enable compile commands for use by IDE autocompletion
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(USE_PREBUILT_PICO_TOOLS "Use prebuilt pioasm & picotool from tools/prebuilt" ON)
+
+if(USE_PREBUILT_PICO_TOOLS AND WIN32)
+  set(PICO_SDK_PIOASM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/prebuilt/pioasm.exe" CACHE FILEPATH "Path to prebuilt pioasm")
+  set(PICO_SDK_PICOTOOL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/prebuilt/picotool.exe" CACHE FILEPATH "Path to prebuilt picotool")
+  set(PICO_SDK_SKIP_BUILD_TOOLS 1 CACHE BOOL "Skip building host tools")
+endif()
+
 # initialize the SDK based on PICO_SDK_PATH
 # note: this must happen before project()
 include(pico_sdk_import.cmake)
