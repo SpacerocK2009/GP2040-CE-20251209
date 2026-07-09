@@ -7,7 +7,10 @@
 
 #define P5GENERAL_KEEPALIVE_US                          5000
 
-#define P5GENERAL_DRIVER_PRINTF_ENABLE                  0       // GP0 as UART0_TX
+#ifndef P5GENERAL_LATENCY_DEBUG
+#define P5GENERAL_LATENCY_DEBUG                         0
+#endif
+#define P5GENERAL_DRIVER_PRINTF_ENABLE                  P5GENERAL_LATENCY_DEBUG       // GP0 as UART0_TX
 #if P5GENERAL_DRIVER_PRINTF_ENABLE
 #   define P5DRPINTF_INIT(...)                          stdio_init_all(__VA_ARGS__)
 #   define P5DRPINTF(...)                               printf(__VA_ARGS__)
@@ -47,6 +50,7 @@ void P5GeneralDriver::initialize() {
     
     touchCounter = 0;
     diff_report_repeat = 0;
+    deferred_report_pending = false;
 
     p5GeneralReport = {
         .report_id = 0x01,
@@ -64,6 +68,8 @@ void P5GeneralDriver::initialize() {
         .data_30_31_0x001a = 0x001a,
         .touchpad_data = touchpadData,
     };
+    memcpy(&p5GeneralReport_last, &p5GeneralReport, sizeof(p5GeneralReport_last));
+    memcpy(&p5GeneralReport_deferred, &p5GeneralReport, sizeof(p5GeneralReport_deferred));
 
     class_driver = 	{
 #if CFG_TUSB_DEBUG >= 2
@@ -106,6 +112,7 @@ bool P5GeneralDriver::isAuthBusy() {
     return p5GeneralAuthData &&
         (p5GeneralAuthData->hash_pending ||
          p5GeneralAuthData->hash_ready ||
+         p5GeneralAuthData->hash_in_flight ||
          p5GeneralAuthData->passthrough_state != P5GeneralGPAuthState::p5g_auth_idle ||
          !p5GeneralAuthData->dongle_ready);
 }
@@ -117,34 +124,24 @@ bool P5GeneralDriver::shouldDeferIO() {
 
     return p5GeneralAuthData->hash_pending ||
            p5GeneralAuthData->hash_ready ||
+           p5GeneralAuthData->hash_in_flight ||
            p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_send_f0_wait ||
            p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_recv_f1_wait ||
            p5GeneralAuthData->passthrough_state == P5GeneralGPAuthState::p5g_auth_recv_f2_wait;
 }
 
-bool P5GeneralDriver::process(Gamepad * gamepad) {
-    if (!p5GeneralAuthData || !p5GeneralAuthData->dongle_ready) {
-        return false;
-    }
-    
-    if (tud_suspended()) {
-        tud_remote_wakeup();
-    }
+void P5GeneralDriver::queueReportForSigning(const P5GenerorReport &report, uint8_t repeatCount) {
+    memcpy(&p5GeneralReport_last, &report, sizeof(p5GeneralReport_last));
+    memcpy(p5GeneralAuthData->hash_pending_buffer, &report, sizeof(report));
+    p5GeneralAuthData->hash_pending = true;
+    diff_report_repeat = repeatCount;
+#if P5GENERAL_LATENCY_DEBUG
+    P5DRPINTF("P5D:queue us=%llu buttons=%02x%02x repeat=%u\n", to_us_since_boot(get_absolute_time()),
+        p5GeneralAuthData->hash_pending_buffer[10], p5GeneralAuthData->hash_pending_buffer[9], diff_report_repeat);
+#endif
+}
 
-    if (p5GeneralAuthData->hash_ready) {
-        if (tud_hid_ready() && tud_hid_report(0, p5GeneralAuthData->hash_finish_buffer, sizeof(p5GeneralAuthData->hash_finish_buffer)) == true ) {
-            last_report_us = to_us_since_boot(get_absolute_time());
-            p5GeneralAuthData->hash_ready = false;
-        } else {
-            return false;
-        }
-    }
-
-    if (p5GeneralAuthData->hash_pending) {
-        return false;
-    }
-
-    // update gamepad
+void P5GeneralDriver::updateReportFromGamepad(Gamepad * gamepad) {
     const GamepadOptions & options = gamepad->getOptions();
     switch (gamepad->state.dpad & GAMEPAD_MASK_DPAD)
     {
@@ -246,16 +243,58 @@ bool P5GeneralDriver::process(Gamepad * gamepad) {
     }
     p5GeneralReport.touchpad_data = touchpadData;
 
-    if (memcmp(&p5GeneralReport_last, &p5GeneralReport, sizeof(p5GeneralReport))) {
-        memcpy(&p5GeneralReport_last, &p5GeneralReport, sizeof(p5GeneralReport));
-        memcpy(p5GeneralAuthData->hash_pending_buffer, &p5GeneralReport, sizeof(p5GeneralReport));
-        p5GeneralAuthData->hash_pending = true;
-        diff_report_repeat = 4;
+}
+
+bool P5GeneralDriver::process(Gamepad * gamepad) {
+    if (!p5GeneralAuthData || !p5GeneralAuthData->dongle_ready) {
+        return false;
+    }
+
+    if (tud_suspended()) {
+        tud_remote_wakeup();
+    }
+
+    updateReportFromGamepad(gamepad);
+    const bool reportChanged = memcmp(&p5GeneralReport_last, &p5GeneralReport, sizeof(p5GeneralReport)) != 0;
+
+    if (p5GeneralAuthData->hash_ready) {
+        if (tud_hid_ready() && tud_hid_report(0, p5GeneralAuthData->hash_finish_buffer, sizeof(p5GeneralAuthData->hash_finish_buffer)) == true ) {
+            last_report_us = to_us_since_boot(get_absolute_time());
+            p5GeneralAuthData->hash_ready = false;
+#if P5GENERAL_LATENCY_DEBUG
+            P5DRPINTF("P5D:sent us=%llu changed=%u deferred=%u\n", last_report_us, reportChanged, deferred_report_pending);
+#endif
+        } else {
+            return false;
+        }
+    }
+
+    const bool signingBusy = p5GeneralAuthData->hash_pending || p5GeneralAuthData->hash_ready || p5GeneralAuthData->hash_in_flight;
+    if (signingBusy) {
+        if (reportChanged) {
+            if (deferred_report_pending && memcmp(&p5GeneralReport_deferred, &p5GeneralReport, sizeof(p5GeneralReport)) != 0) {
+#if P5GENERAL_LATENCY_DEBUG
+                P5DRPINTF("P5D:deferred overwrite us=%llu\n", to_us_since_boot(get_absolute_time()));
+#endif
+            }
+            memcpy(&p5GeneralReport_deferred, &p5GeneralReport, sizeof(p5GeneralReport_deferred));
+            deferred_report_pending = true;
+        }
+        return false;
+    }
+
+    if (deferred_report_pending) {
+        queueReportForSigning(p5GeneralReport_deferred, 1);
+        deferred_report_pending = false;
+        return true;
+    }
+
+    if (reportChanged) {
+        queueReportForSigning(p5GeneralReport, 1);
         return true;
     } else if (diff_report_repeat) {
         diff_report_repeat--;
-        memcpy(p5GeneralAuthData->hash_pending_buffer, &p5GeneralReport, sizeof(p5GeneralReport));
-        p5GeneralAuthData->hash_pending = true;
+        queueReportForSigning(p5GeneralReport, diff_report_repeat);
         return true;
     } else {
         return false;

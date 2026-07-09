@@ -34,6 +34,8 @@ public:
     virtual const uint8_t * get_descriptor_device_qualifier_cb() { return nullptr; }
     virtual uint16_t GetJoystickMidValue();
     virtual USBListener * get_usb_auth_listener();
+    void updateReportFromGamepad(Gamepad * gamepad);
+    void queueReportForSigning(const P5GenerorReport &report, uint8_t repeatCount);
     bool getAuthSent() { return false;}
     bool isAuthBusy();
     bool shouldDeferIO();
@@ -41,6 +43,7 @@ public:
 private:
     P5GenerorReport p5GeneralReport;
     P5GenerorReport p5GeneralReport_last;
+    P5GenerorReport p5GeneralReport_deferred;
     TouchpadData touchpadData;
     //PSSensor gyroscope;
     //PSSensor accelerometer;
@@ -50,6 +53,7 @@ private:
     bool pointOneTouched = false;
     bool pointTwoTouched = false;
     uint8_t diff_report_repeat;
+    bool deferred_report_pending = false;
     uint8_t touchCounter;
 };
 
