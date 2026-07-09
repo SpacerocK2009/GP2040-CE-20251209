@@ -208,7 +208,15 @@ void DisplayAddon::process() {
         return;
     }
 
-    if ((now - prevDrawMillis) < DISPLAY_FRAME_INTERVAL_MS) {
+    if (!configMode && DriverManager::getInstance().getInputMode() == INPUT_MODE_P5GENERAL) {
+#if P5GENERAL_DISABLE_OLED
+        return;
+#else
+        if ((now - prevDrawMillis) < P5GENERAL_OLED_SAFE_INTERVAL_MS) {
+            return;
+        }
+#endif
+    } else if ((now - prevDrawMillis) < DISPLAY_FRAME_INTERVAL_MS) {
         return;
     }
     prevDrawMillis = now;

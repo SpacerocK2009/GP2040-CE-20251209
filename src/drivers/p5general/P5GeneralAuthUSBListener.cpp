@@ -35,9 +35,11 @@ void P5GeneralAuthUSBListener::process() {
     if ( p5GeneralAuthData == nullptr )
         return;
 
-    if (p5GeneralAuthData->hash_pending && tuh_hid_send_ready(ps_dev_addr, ps_instance)) {
-        tuh_hid_send_report(ps_dev_addr, ps_instance, 0, p5GeneralAuthData->hash_pending_buffer, 64);
-        p5GeneralAuthData->hash_pending = false;
+    if (p5GeneralAuthData->hash_pending && !p5GeneralAuthData->hash_in_flight && tuh_hid_send_ready(ps_dev_addr, ps_instance)) {
+        if (tuh_hid_send_report(ps_dev_addr, ps_instance, 0, p5GeneralAuthData->hash_pending_buffer, 64)) {
+            p5GeneralAuthData->hash_pending = false;
+            p5GeneralAuthData->hash_in_flight = true;
+        }
     }
 
     switch ( p5GeneralAuthData->passthrough_state ) {
@@ -109,6 +111,9 @@ void P5GeneralAuthUSBListener::unmount(uint8_t dev_addr) {
     ps_dev_addr = 0xFF;
     ps_instance = 0xFF;
     resetHostData();
+    p5GeneralAuthData->hash_pending = false;
+    p5GeneralAuthData->hash_in_flight = false;
+    p5GeneralAuthData->hash_ready = false;
     p5GeneralAuthData->dongle_ready = false;
 }
 
@@ -116,6 +121,7 @@ void P5GeneralAuthUSBListener::report_received(uint8_t dev_addr, uint8_t instanc
     if (!p5GeneralAuthData->hash_ready) {
         memcpy(p5GeneralAuthData->hash_finish_buffer, report, sizeof(p5GeneralAuthData->hash_finish_buffer));
         p5GeneralAuthData->hash_ready = true;
+        p5GeneralAuthData->hash_in_flight = false;
     }
 }
 

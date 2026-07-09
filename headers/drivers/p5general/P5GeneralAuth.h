@@ -25,6 +25,7 @@ typedef struct {
     bool dongle_ready = false;
     bool hash_pending = false;
     bool hash_ready = false;
+    bool hash_in_flight = false;
     P5GeneralGPAuthState passthrough_state;
 } P5GeneralAuthData;
 
