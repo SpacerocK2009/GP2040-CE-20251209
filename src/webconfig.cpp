@@ -233,7 +233,7 @@ struct DataAndStatusCode
 // **** WEB SERVER Overrides and Special Functionality ****
 int set_file_data(fs_file* file, const DataAndStatusCode& dataAndStatusCode)
 {
-    static string returnData;
+    std::string* returnData = new std::string();
 
     const char* statusCodeStr = "";
     switch (dataAndStatusCode.statusCode)
@@ -243,25 +243,25 @@ int set_file_data(fs_file* file, const DataAndStatusCode& dataAndStatusCode)
         case HttpStatusCode::_500: statusCodeStr = "500 Internal Server Error"; break;
     }
 
-    returnData.clear();
-    returnData.append("HTTP/1.0 ");
-    returnData.append(statusCodeStr);
-    returnData.append("\r\n");
-    returnData.append(
+    returnData->append("HTTP/1.0 ");
+    returnData->append(statusCodeStr);
+    returnData->append("\r\n");
+    returnData->append(
         "Server: GP2040-CE " GP2040VERSION "\r\n"
         "Content-Type: application/json\r\n"
         "Access-Control-Allow-Origin: *\r\n"
         "Content-Length: "
     );
-    returnData.append(std::to_string(dataAndStatusCode.data.length()));
-    returnData.append("\r\n\r\n");
-    returnData.append(dataAndStatusCode.data);
+    returnData->append(std::to_string(dataAndStatusCode.data.length()));
+    returnData->append("\r\n\r\n");
+    returnData->append(dataAndStatusCode.data);
 
-    file->data = returnData.c_str();
-    file->len = returnData.size();
+    file->data = returnData->c_str();
+    file->len = returnData->size();
     file->index = file->len;
-    file->http_header_included = file->http_header_included;
-    file->pextension = NULL;
+    file->http_header_included = true;
+    file->pextension = returnData;
+    file->is_custom_file = 1;
 
     return 1;
 }
@@ -2760,7 +2760,7 @@ void fs_close_custom(struct fs_file *file)
 {
     if (file && file->is_custom_file && file->pextension)
     {
-        mem_free(file->pextension);
+        delete static_cast<std::string*>(file->pextension);
         file->pextension = NULL;
     }
 }

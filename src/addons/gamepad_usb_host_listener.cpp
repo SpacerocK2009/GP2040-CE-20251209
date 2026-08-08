@@ -82,6 +82,8 @@ void GamepadUSBHostListener::mount(uint8_t dev_addr, uint8_t instance, uint8_t c
 }
 
 void GamepadUSBHostListener::unmount(uint8_t dev_addr) {
+    if (!_controller_host_enabled || _controller_dev_addr != dev_addr) return;
+
     _controller_host_enabled = false;
     controller_pid = 0x00;
     controller_vid = 0x00;

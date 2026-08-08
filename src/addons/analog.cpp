@@ -189,6 +189,11 @@ void AnalogInput::process() {
         uint16_t clampedX = (uint16_t)std::min((uint32_t)(joystickMax * std::min(final_x, 1.0f)), (uint32_t)0xFFFF);
         uint16_t clampedY = (uint16_t)std::min((uint32_t)(joystickMax * std::min(final_y, 1.0f)), (uint32_t)0xFFFF);
 
+        // Do not let an idle stick overwrite another stick assigned to the same output mode.
+        if (final_x == ANALOG_CENTER && final_y == ANALOG_CENTER) {
+            continue;
+        }
+
         if (adc_pairs[i].analog_dpad == DpadMode::DPAD_MODE_LEFT_ANALOG) {
             gamepad->state.lx = clampedX;
             gamepad->state.ly = clampedY;

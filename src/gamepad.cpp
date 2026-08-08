@@ -277,14 +277,13 @@ void Gamepad::process()
 		state.dpad = filterToFourWayMode(state.dpad);
 	}
 
-	// hold current dpad state regardless of input
-	state.dpadOriginal = state.dpad;
+	uint8_t currentDpadSnapshot = state.dpad;
 
 	// stash digital-only dpad state for later
-	uint8_t dpadOnlyMask = ((state.dpadOriginal & 0xF0) >> 4);
+	uint8_t dpadOnlyMask = ((currentDpadSnapshot & 0xF0) >> 4);
 
 	// and mask out the mode-specific mask
-	uint8_t dpadModeMask = (state.dpadOriginal & 0x0F);
+	uint8_t dpadModeMask = (currentDpadSnapshot & 0x0F);
 
 	// set dpad back to dpad mode-specific state
 	state.dpad = dpadModeMask;
@@ -341,6 +340,9 @@ void Gamepad::read()
 		| ((values & mapDigitalLeft->pinMask)  ? (mapDigitalLeft->buttonMask << 4)  : 0)
 		| ((values & mapDigitalRight->pinMask) ? (mapDigitalRight->buttonMask << 4) : 0)
 	;
+
+	// Preserve the physical D-pad before add-ons, macros, SOCD, or D-pad mode processing.
+	state.dpadOriginal = state.dpad;
 
 	state.buttons = 0
 		| ((values & mapButtonB1->pinMask)  ? mapButtonB1->buttonMask  : 0)
