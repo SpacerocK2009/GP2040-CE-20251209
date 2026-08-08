@@ -73,6 +73,13 @@ public:
 	}
 
 	/**
+	 * @brief Check for a raw, physical dpad press. Unaffected by macros, SOCD, or D-pad modes.
+	 */
+	inline bool __attribute__((always_inline)) pressedDpadPhysical(const uint8_t mask) {
+		return (state.dpadOriginal & mask) == mask;
+	}
+
+	/**
 	 * @brief Check for an aux button press. Same idea as `pressedButton`.
 	 */
 	inline bool __attribute__((always_inline)) pressedAux(const uint16_t mask) {
@@ -84,7 +91,7 @@ public:
 	 */
 	inline bool __attribute__((always_inline)) pressedHotkey(const HotkeyEntry hotkey) {
 		return (hotkey.action != 0 && pressedButton(hotkey.buttonsMask) &&
-				pressedDpad(hotkey.dpadMask) && pressedAux(hotkey.auxMask));
+				pressedDpadPhysical(hotkey.dpadMask) && pressedAux(hotkey.auxMask));
 	}
 
 	/**
