@@ -23,7 +23,9 @@ void ExCryptDesParity(const uint8_t* input, uint32_t input_size, uint8_t* output
 
 void ExCryptDesKey(EXCRYPT_DES_STATE* state, const uint8_t* key)
 {
-  uint64_t qkey = SWAP64(*(const uint64_t*)key);
+  uint64_t qkey;
+  memcpy(&qkey, key, sizeof(qkey));
+  qkey = SWAP64(qkey);
 
   // initial key schedule calculation
   uint64_t permuted_choice_1 = 0; // 56 bits
@@ -171,7 +173,8 @@ void ExCryptDes3Ecb(const EXCRYPT_DES3_STATE* state, const uint8_t* input, uint8
 
 void ExCryptDes3Cbc(const EXCRYPT_DES3_STATE* state, const uint8_t* input, uint32_t input_size, uint8_t* output, uint8_t* feed, uint8_t encrypt)
 {
-  uint64_t last_block = *(uint64_t*)feed;
+  uint64_t last_block;
+  memcpy(&last_block, feed, sizeof(last_block));
   for (uint32_t i = 0; i < input_size / 8; i++)
   {
     if (encrypt) {
@@ -194,5 +197,5 @@ void ExCryptDes3Cbc(const EXCRYPT_DES3_STATE* state, const uint8_t* input, uint3
     input += 8;
     output += 8;
   }
-  *(uint64_t*)feed = last_block;
+  memcpy(feed, &last_block, sizeof(last_block));
 }
