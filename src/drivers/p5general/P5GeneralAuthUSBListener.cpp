@@ -118,11 +118,27 @@ void P5GeneralAuthUSBListener::unmount(uint8_t dev_addr) {
 }
 
 void P5GeneralAuthUSBListener::report_received(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {
-    if (!p5GeneralAuthData->hash_ready) {
-        memcpy(p5GeneralAuthData->hash_finish_buffer, report, sizeof(p5GeneralAuthData->hash_finish_buffer));
-        p5GeneralAuthData->hash_ready = true;
-        p5GeneralAuthData->hash_in_flight = false;
+    // USBHostManager broadcasts reports to every listener.  Only accept the
+    // response to the report that is currently being signed by our dongle.
+    // Copying a short/unrelated report as a 64-byte P5General input report can
+    // turn its zero-filled bytes into full-up/full-left stick positions.
+    if (p5GeneralAuthData == nullptr || !p5GeneralAuthData->dongle_ready ||
+        dev_addr != ps_dev_addr || instance != ps_instance ||
+        !p5GeneralAuthData->hash_in_flight || p5GeneralAuthData->hash_ready) {
+        return;
     }
+
+    if (len != sizeof(p5GeneralAuthData->hash_finish_buffer) || report[0] != 0x01) {
+        // Keep the original pending buffer intact and retry instead of
+        // forwarding a malformed packet to the console.
+        p5GeneralAuthData->hash_in_flight = false;
+        p5GeneralAuthData->hash_pending = true;
+        return;
+    }
+
+    memcpy(p5GeneralAuthData->hash_finish_buffer, report, sizeof(p5GeneralAuthData->hash_finish_buffer));
+    p5GeneralAuthData->hash_ready = true;
+    p5GeneralAuthData->hash_in_flight = false;
 }
 
 void P5GeneralAuthUSBListener::set_report_complete(uint8_t dev_addr, uint8_t instance, uint8_t report_id, uint8_t report_type, uint16_t len) {
