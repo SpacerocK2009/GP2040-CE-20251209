@@ -5,8 +5,6 @@
 #include "drivers/p5general/P5GeneralAuth.h"
 #include "enums.pb.h"
 
-#define P5GENERAL_KEEPALIVE_US                          5000
-
 #ifndef P5GENERAL_LATENCY_DEBUG
 #define P5GENERAL_LATENCY_DEBUG                         0
 #endif
@@ -299,12 +297,6 @@ bool P5GeneralDriver::process(Gamepad * gamepad) {
     } else if (diff_report_repeat) {
         diff_report_repeat--;
         queueReportForSigning(p5GeneralReport, diff_report_repeat);
-        return true;
-    } else if ((to_us_since_boot(get_absolute_time()) - last_report_us) >= P5GENERAL_KEEPALIVE_US) {
-        // Refresh unchanged state too.  If a signed packet is ever lost or
-        // rejected, the PS5 otherwise holds the last (possibly full-scale)
-        // stick position indefinitely.
-        queueReportForSigning(p5GeneralReport, 0);
         return true;
     }
 

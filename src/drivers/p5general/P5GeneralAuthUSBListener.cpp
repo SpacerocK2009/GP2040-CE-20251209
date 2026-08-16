@@ -137,6 +137,18 @@ void P5GeneralAuthUSBListener::report_received(uint8_t dev_addr, uint8_t instanc
     }
 
     memcpy(p5GeneralAuthData->hash_finish_buffer, report, sizeof(p5GeneralAuthData->hash_finish_buffer));
+
+    // The signing dongle's response is not a byte-for-byte echo of the input
+    // report on all firmware revisions. In particular, its returned right
+    // stick bytes can contain unrelated data. Preserve the locally sampled
+    // stick values while retaining the dongle-produced signing metadata.
+    P5GenerorReport* signed_report = reinterpret_cast<P5GenerorReport*>(p5GeneralAuthData->hash_finish_buffer);
+    const P5GenerorReport* submitted_report = reinterpret_cast<const P5GenerorReport*>(p5GeneralAuthData->hash_pending_buffer);
+    signed_report->left_stick_x = submitted_report->left_stick_x;
+    signed_report->left_stick_y = submitted_report->left_stick_y;
+    signed_report->right_stick_x = submitted_report->right_stick_x;
+    signed_report->right_stick_y = submitted_report->right_stick_y;
+
     p5GeneralAuthData->hash_ready = true;
     p5GeneralAuthData->hash_in_flight = false;
 }
