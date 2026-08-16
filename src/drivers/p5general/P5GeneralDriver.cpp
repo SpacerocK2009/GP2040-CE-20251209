@@ -271,7 +271,11 @@ bool P5GeneralDriver::process(Gamepad * gamepad) {
 
     const bool signingBusy = p5GeneralAuthData->hash_pending || p5GeneralAuthData->hash_ready || p5GeneralAuthData->hash_in_flight;
     if (signingBusy) {
-        if (reportChanged) {
+        // Once a deferred report exists, keep replacing it with the current
+        // state even if that state happens to equal the last queued report.
+        // Otherwise a brief diagonal can be sent after the stick has already
+        // returned to center.
+        if (reportChanged || deferred_report_pending) {
             if (deferred_report_pending && memcmp(&p5GeneralReport_deferred, &p5GeneralReport, sizeof(p5GeneralReport)) != 0) {
 #if P5GENERAL_LATENCY_DEBUG
                 P5DRPINTF("P5D:deferred overwrite us=%llu\n", to_us_since_boot(get_absolute_time()));
@@ -296,9 +300,15 @@ bool P5GeneralDriver::process(Gamepad * gamepad) {
         diff_report_repeat--;
         queueReportForSigning(p5GeneralReport, diff_report_repeat);
         return true;
-    } else {
-        return false;
+    } else if ((to_us_since_boot(get_absolute_time()) - last_report_us) >= P5GENERAL_KEEPALIVE_US) {
+        // Refresh unchanged state too.  If a signed packet is ever lost or
+        // rejected, the PS5 otherwise holds the last (possibly full-scale)
+        // stick position indefinitely.
+        queueReportForSigning(p5GeneralReport, 0);
+        return true;
     }
+
+    return false;
 }
 
 void P5GeneralDriver::processAux() {
